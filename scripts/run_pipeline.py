@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Run the furniture replacement pipeline (steps 0-4) on one image.
+"""Run the furniture replacement pipeline (steps 0-5) on one image.
 
 Example:
     python scripts/run_pipeline.py --image path/to/room.jpg

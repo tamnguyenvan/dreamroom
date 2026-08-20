@@ -28,6 +28,7 @@ from dreamroom.geometry3d import (
 )
 from dreamroom.moge_client import DEFAULT_ENDPOINT, MogeClient
 from dreamroom.viz3d import export_debug_glb, intrinsics_px, project_points
+from dreamroom.wall_geometry import WallPlane, filter_wall_planes, fit_wall_planes
 
 WIDTH, HEIGHT = 800, 600
 FX = FY = 600.0
@@ -114,12 +115,37 @@ def test_export_debug_glb_scales_source_scene():
 
     box = Box3D(np.zeros(3), np.eye(3), np.ones(3))
     plane = FloorPlane(np.zeros(3), np.array([0.0, 1.0, 0.0]), 1.0, 100)
-    exported = export_debug_glb(source.export(file_type="glb"), box, plane, scale_factor=0.5)
+    wall = WallPlane(
+        point=np.array([0.0, 0.0, -2.0]),
+        normal=np.array([0.0, 0.0, 1.0]),
+        corners=np.array(
+            [
+                [-1.0, 0.0, -2.0],
+                [1.0, 0.0, -2.0],
+                [1.0, 2.0, -2.0],
+                [-1.0, 2.0, -2.0],
+            ]
+        ),
+        inlier_count=500,
+        num_candidates=1000,
+        rmse=0.01,
+        width=2.0,
+        height=2.0,
+        confidence=0.8,
+    )
+    exported = export_debug_glb(
+        source.export(file_type="glb"),
+        box,
+        plane,
+        scale_factor=0.5,
+        walls=[wall],
+    )
 
     assert exported is not None
     result = trimesh.load(io.BytesIO(exported), file_type="glb", force="scene")
     assert result.bounds[1, 0] == pytest.approx(5.5)
     assert result.geometry["fitted_box"].extents == pytest.approx(np.ones(3))
+    assert "wall_plane_01" in result.geometry
 
 
 
@@ -141,6 +167,52 @@ def test_floor_and_box_fit_clean():
     assert np.linalg.det(box.axes.T) == pytest.approx(1.0, abs=1e-6)
     bottom = box.corners()[:4]
     assert plane.signed_distance(bottom) == pytest.approx(np.zeros(4), abs=1e-6)
+
+
+def test_global_wall_fit_clean():
+    point_map, mask, _ = synthetic_room()
+    floor = fit_floor_plane(floor_candidate_points(point_map, mask), seed=0)
+    assert floor is not None
+
+    walls = fit_wall_planes(point_map, mask, floor, iterations=300, seed=0)
+
+    assert walls
+    back_wall = min(walls, key=lambda wall: abs(wall.point[2] - WALL_Z))
+    assert abs(back_wall.normal @ floor.normal) < 1e-6
+    assert abs(back_wall.normal[2]) > 0.99
+    assert back_wall.point[2] == pytest.approx(WALL_Z, abs=0.05)
+    assert back_wall.width > 2.0
+    assert back_wall.height > 1.5
+    assert floor.signed_distance(back_wall.corners[:2]) == pytest.approx(
+        np.zeros(2), abs=1e-6
+    )
+    assert back_wall.to_dict()["confidence"] > 0.0
+
+
+def test_wall_post_filter_rejects_parallel_shadow_and_partial_plane():
+    def wall(normal, point, inliers, height, confidence):
+        return WallPlane(
+            point=np.asarray(point, dtype=float),
+            normal=np.asarray(normal, dtype=float),
+            corners=np.zeros((4, 3)),
+            inlier_count=inliers,
+            num_candidates=25_000,
+            rmse=0.01,
+            width=3.0,
+            height=height,
+            confidence=confidence,
+        )
+
+    back = wall([0.0, 0.0, 1.0], [0.0, -1.0, -4.0], 5_000, 2.2, 0.75)
+    shadow = wall([0.04, 0.0, 0.9992], [0.0, -1.0, -3.65], 1_000, 2.3, 0.55)
+    side = wall([1.0, 0.0, 0.0], [-2.0, -1.0, -4.0], 3_000, 2.1, 0.70)
+    partial = wall([0.7, 0.0, 0.714], [1.0, -1.0, -2.0], 600, 1.4, 0.35)
+
+    filtered = filter_wall_planes([shadow, partial, side, back])
+
+    assert len(filtered) == 2
+    assert filtered[0] is back
+    assert filtered[1] is side
 
 
 def test_floor_and_box_fit_noisy():

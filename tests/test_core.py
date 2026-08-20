@@ -21,11 +21,13 @@ from dreamroom.moge_client import MogeResult
 from dreamroom.pipeline import FurniturePipeline
 from dreamroom.pipeline.models import PipelineContext
 from dreamroom.pipeline.outputs import OutputWriter
+from dreamroom.pipeline.stages.walls import WallStage
 from dreamroom.pipeline.timing import print_latency_stats
 from dreamroom.segmenter import sample_points
 from dreamroom.ui.reference import ReferenceLineApp, ReferenceScale, prompt_meters
 from dreamroom.ui.strokes import ObjectSelection, SelectObjectApp, select_object
 from dreamroom.ui.window import WindowApp
+from dreamroom.wall_geometry import WallPlane
 
 
 def make_image(width: int = 640, height: int = 480) -> np.ndarray:
@@ -254,6 +256,76 @@ def test_pipeline_latency_stats(tmp_path, capsys):
     assert "step_3_moge: skipped" in capsys.readouterr().out
 
 
+@pytest.mark.parametrize("debug", [False, True])
+def test_wall_stage_visualizes_walls_only_in_debug(tmp_path, monkeypatch, debug):
+    image = np.zeros((10, 10, 3), dtype=np.uint8)
+    mask = np.zeros((10, 10), dtype=bool)
+    floor = FloorPlane(np.zeros(3), np.array([0.0, 1.0, 0.0]), 1.0, 100)
+    box = Box3D(np.zeros(3), np.eye(3), np.ones(3))
+    wall = WallPlane(
+        point=np.array([0.0, 0.0, -2.0]),
+        normal=np.array([0.0, 0.0, 1.0]),
+        corners=np.array(
+            [
+                [-1.0, 0.0, -2.0],
+                [1.0, 0.0, -2.0],
+                [1.0, 2.0, -2.0],
+                [-1.0, 2.0, -2.0],
+            ]
+        ),
+        inlier_count=100,
+        num_candidates=200,
+        rmse=0.01,
+        width=2.0,
+        height=2.0,
+        confidence=0.8,
+    )
+    context = PipelineContext(
+        image_path=tmp_path / "room.png",
+        settings=Settings(debug=debug),
+        image_bgr=image,
+        selection=ObjectSelection(mask, [], []),
+        moge=MogeResult(
+            np.zeros((10, 10, 3)),
+            {
+                "image_size": [10, 10],
+                "intrinsics": [[1.0, 0.0, 0.5], [0.0, 1.0, 0.5], [0.0, 0.0, 1.0]],
+            },
+            glb_bytes=b"source",
+        ),
+        point_map=np.zeros((10, 10, 3)),
+        mask_pm=mask,
+        scale_correction=1.0,
+        floor=floor,
+        box=box,
+    )
+    calls = {}
+    monkeypatch.setattr(
+        "dreamroom.pipeline.stages.walls.fit_wall_planes",
+        lambda *args: [wall],
+    )
+
+    def fake_draw(*args):
+        calls["draw_walls"] = args[-1]
+        return image
+
+    def fake_export(*args):
+        calls["glb_walls"] = args[-1]
+        return b"debug-glb"
+
+    monkeypatch.setattr("dreamroom.pipeline.stages.walls.draw_debug_2d", fake_draw)
+    monkeypatch.setattr("dreamroom.pipeline.stages.walls.export_debug_glb", fake_export)
+
+    WallStage().run(context)
+
+    assert context.walls[0] is wall
+    assert calls["draw_walls"] is (context.walls if debug else None)
+    if debug:
+        assert calls["glb_walls"] is context.walls
+    else:
+        assert "glb_walls" not in calls
+
+
 def test_pipeline_run_writes_latency_stats(tmp_path, monkeypatch):
     image_path = tmp_path / "room.png"
     cv2.imwrite(str(image_path), make_image())
@@ -279,6 +351,7 @@ def test_pipeline_run_writes_latency_stats(tmp_path, monkeypatch):
     assert stats["latency_seconds"]["step_2_reference"] >= 0
     assert stats["latency_seconds"]["step_3_moge"] is None
     assert stats["latency_seconds"]["step_4_fit_3d"] is None
+    assert stats["latency_seconds"]["step_5_fit_walls"] is None
     assert stats["latency_seconds"]["total"] >= stats["latency_seconds"]["step_0_resize"]
     assert result.latency_seconds == stats["latency_seconds"]
 
@@ -303,6 +376,8 @@ def test_production_moge_outputs_only_save_2d_debug(tmp_path):
     OutputWriter.save_moge_outputs(tmp_path, context)
 
     assert (tmp_path / "box3d.json").is_file()
+    assert (tmp_path / "walls3d.json").is_file()
+    assert json.loads((tmp_path / "walls3d.json").read_text())["walls"] == []
     assert (tmp_path / "debug_2d.png").is_file()
     for name in ("point_map.npy", "moge_metadata.json", "output.glb", "depth.png", "normal.png"):
         assert not (tmp_path / name).exists(), name

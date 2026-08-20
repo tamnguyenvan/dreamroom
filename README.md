@@ -1,6 +1,6 @@
 # dreamroom
 
-Furniture replacement pipeline. Current scope: steps 0-4.
+Furniture replacement pipeline. Current scope: steps 0-5.
 
 - **Step 0** — resize the input so its longest side is 1280 px.
 - **Step 1** — select an object: draw polylines in an OpenCV window, segment
@@ -13,6 +13,8 @@ Furniture replacement pipeline. Current scope: steps 0-4.
 - **Step 4** — resize the confirmed mask to point-map resolution, calibrate
   the MoGe scale from Step 2, fit a floor plane, and generate a floor-aligned
   3D bounding box with 2D/3D debug visualizations.
+- **Step 5** — use the fitted floor as a hard constraint to detect global
+  vertical wall planes and recover finite, floor-anchored wall patches.
 
 ## Project layout
 
@@ -23,13 +25,14 @@ dreamroom/
 │   ├── image_ops.py        # step 0: load / resize / save
 │   ├── segmenter.py        # local SimpleClick port (from simpleclick-modal)
 │   ├── geometry3d.py       # step 4: floor plane and 3D box fitting
+│   ├── wall_geometry.py    # step 5: global floor-constrained wall fitting
 │   ├── moge_client.py      # step 3: MoGe-2 API client and response parser
 │   ├── pipeline/            # ordered stages, context, timing, and outputs
 │   │   ├── __init__.py      # FurniturePipeline facade
 │   │   ├── models.py        # shared pipeline context/result models
 │   │   ├── outputs.py       # output artifact persistence
 │   │   └── stages/          # one module per pipeline stage
-│   ├── viz3d.py             # step 4: 2D overlay and calibrated GLB export
+│   ├── viz3d.py             # geometry overlays and calibrated GLB export
 │   └── ui/
 │       ├── window.py       # shared OpenCV window base class
 │       ├── strokes.py      # step 1: polylines -> segment -> confirm
@@ -120,6 +123,22 @@ returned metadata.
   Step 2 calibration factor before adding the fitted box and floor plane,
   keeping all displayed geometry in calibrated metric coordinates.
 
+### Step 5: global wall planes
+
+- Local surface normals are estimated directly from the organized point map;
+  MoGe debug normals are not required in production mode.
+- Floor inliers, points close to the floor, and a dilated object mask are
+  excluded. Candidate normals must be approximately horizontal.
+- Vertical 3D wall fitting is reduced to multi-model 2D line RANSAC in the
+  fitted floor frame. Each model is refined with total least squares.
+- Small or scattered models are rejected by global inlier ratio, connected
+  image-space occupancy, confidence, and scene-relative wall height.
+- Nearby parallel layers are compared by support so furniture or wall-adjacent
+  surfaces do not become duplicate room walls; close coplanar results are merged.
+- Every accepted wall is saved as an infinite plane plus a finite quadrilateral
+  whose lower edge is snapped to the floor. With `--debug`, those patches are
+  drawn in `debug_2d.png` and inserted into `debug_3d.glb`.
+
 ## Outputs
 
 Each run writes `outputs/<image-name>-<timestamp>/`:
@@ -135,12 +154,13 @@ Each run writes `outputs/<image-name>-<timestamp>/`:
 - `moge_metadata.json` — point-map size, camera convention, and normalized intrinsics (debug mode).
 - `depth.png` / `normal.png` — MoGe debug previews (debug mode).
 - `box3d.json` — calibrated box center, axes, extents, corners, floor plane, and scale correction.
-- `debug_2d.png` — fitted floor plane and box reprojected onto the working image.
-- `debug_3d.glb` — calibrated MoGe scene with the fitted box and floor plane overlays (debug mode).
+- `walls3d.json` — detected wall planes, finite corners, support, residual, and confidence.
+- `debug_2d.png` — fitted geometry reprojected onto the working image; wall overlays are debug-only.
+- `debug_3d.glb` — calibrated MoGe scene with box, floor, and wall overlays (debug mode).
 - `stats.json` — per-step latency in seconds, output-save time, and total runtime.
 
 The CLI also prints the same latency summary after the output directory is
-written. Steps 3 and 4 are reported as `skipped` when `--skip-moge` is used.
+written. Steps 3-5 are reported as `skipped` when `--skip-moge` is used.
 
 ## Notes
 

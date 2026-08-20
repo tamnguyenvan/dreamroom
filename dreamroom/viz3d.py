@@ -15,6 +15,7 @@ import numpy as np
 
 from .geometry3d import Box3D, FloorPlane
 from .ui.window import draw_banner
+from .wall_geometry import WallPlane
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +23,14 @@ BOX_COLOR = (0, 220, 230)  # yellow (BGR)
 BOX_TOP_COLOR = (230, 160, 0)  # orange-ish top face
 FLOOR_COLOR = (180, 80, 180)  # purple
 MASK_COLOR = (0, 200, 0)  # green
+WALL_COLORS = [
+    (255, 120, 40),
+    (255, 60, 180),
+    (80, 180, 255),
+    (200, 120, 255),
+    (255, 200, 80),
+    (120, 255, 180),
+]
 
 # corner order from Box3D.corners(): 0-3 bottom face, 4-7 top face
 BOX_EDGES = [
@@ -78,8 +87,9 @@ def draw_debug_2d(
     k_px: np.ndarray,
     pixel_scale: tuple[float, float],
     mask: np.ndarray | None = None,
+    walls: list[WallPlane] | None = None,
 ) -> np.ndarray:
-    """Overlay the fitted box and floor plane on the working image.
+    """Overlay the fitted box, floor plane, and optional walls.
 
     ``pixel_scale`` = (image_w / pm_w, image_h / pm_h) maps point-map pixels
     back to working-image pixels.
@@ -109,6 +119,29 @@ def draw_debug_2d(
         frame = cv2.addWeighted(fill, 0.25, frame, 0.75, 0)
         cv2.polylines(frame, [polygon], True, FLOOR_COLOR, 2, cv2.LINE_AA)
 
+    # finite wall patches (debug mode only at the pipeline call site)
+    for index, wall in enumerate(walls or []):
+        wall_pixels, wall_valid = to_image_pixels(wall.corners)
+        if not wall_valid.all():
+            continue
+        color = WALL_COLORS[index % len(WALL_COLORS)]
+        polygon = np.round(wall_pixels).astype(np.int32).reshape(-1, 1, 2)
+        fill = frame.copy()
+        cv2.fillPoly(fill, [polygon], color)
+        frame = cv2.addWeighted(fill, 0.14, frame, 0.86, 0)
+        cv2.polylines(frame, [polygon], True, color, 2, cv2.LINE_AA)
+        label_at = tuple(np.round(wall_pixels.mean(axis=0)).astype(int))
+        cv2.putText(
+            frame,
+            f"W{index + 1} {wall.confidence:.2f}",
+            label_at,
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.55,
+            color,
+            2,
+            cv2.LINE_AA,
+        )
+
     # box edges
     corners, valid = to_image_pixels(box.corners())
     for start, end in BOX_EDGES:
@@ -130,6 +163,8 @@ def draw_debug_2d(
         f"box (m): {box.extents[0]:.2f} x {box.extents[1]:.2f} x {box.extents[2]:.2f}",
         f"floor inliers: {plane.inlier_ratio * 100:.0f}%{'  [FALLBACK plane]' if plane.fallback else ''}",
     ]
+    if walls is not None:
+        lines.append(f"walls: {len(walls)}")
     return draw_banner(frame, lines)
 
 
@@ -138,8 +173,9 @@ def export_debug_glb(
     box: Box3D,
     plane: FloorPlane,
     scale_factor: float = 1.0,
+    walls: list[WallPlane] | None = None,
 ) -> bytes | None:
-    """Merge the fitted box and floor plane into the MoGe GLB scene.
+    """Merge the fitted box, floor plane, and walls into the MoGe GLB scene.
 
     ``scale_factor`` converts the native MoGe scene to the calibrated metric
     coordinates already used by ``box`` and ``plane``.
@@ -174,6 +210,23 @@ def export_debug_glb(
     )
     quad_mesh.visual.face_colors = [80, 200, 80, 90]
     scene.add_geometry(quad_mesh, geom_name="floor_plane")
+
+    wall_colors = [
+        [40, 130, 255, 100],
+        [220, 60, 220, 100],
+        [255, 170, 40, 100],
+        [160, 80, 255, 100],
+        [50, 210, 210, 100],
+        [80, 220, 130, 100],
+    ]
+    for index, wall in enumerate(walls or []):
+        wall_mesh = trimesh.Trimesh(
+            vertices=wall.corners,
+            faces=[[0, 1, 2], [0, 2, 3], [2, 1, 0], [3, 2, 0]],
+            process=False,
+        )
+        wall_mesh.visual.face_colors = wall_colors[index % len(wall_colors)]
+        scene.add_geometry(wall_mesh, geom_name=f"wall_plane_{index + 1:02d}")
 
     out = io.BytesIO()
     scene.export(out, file_type="glb")
