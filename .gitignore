@@ -1,5 +1,4 @@
 .venv/
-third_party/
 weights/
 outputs/
 __pycache__/

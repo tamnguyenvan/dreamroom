@@ -4,8 +4,8 @@ Furniture replacement pipeline with dependency-based concurrent execution.
 
 - **Resize** — resize the input so its longest side is 1280 px.
 - **Object selection** — draw polylines in an OpenCV window, segment
-  with a local [SimpleClick](https://github.com/uncbiag/SimpleClick) model
-  (ViT-Huge, CoCo+LVIS checkpoint), confirm the mask.
+  with the deployed [SimpleClick](https://github.com/uncbiag/SimpleClick) service,
+  confirm the mask.
 - **Reference scale** — draw a reference line on an object of known length and enter
   its length in meters to get a px-per-meter scale.
 - **MoGe inference** — send the working image to the MoGe-2 API and receive a point
@@ -48,7 +48,7 @@ dreamroom/
 ├── dreamroom/              # the package
 │   ├── config.py           # Settings (paths, thresholds, sizes)
 │   ├── image_ops.py        # image load / resize / save
-│   ├── segmenter.py        # local SimpleClick port (from simpleclick-modal)
+│   ├── segmenter.py        # remote SimpleClick client
 │   ├── sam3_client.py      # fal.ai upload + SAM 3 text segmentation
 │   ├── surface_viz.py      # separate SAM surface-mask diagnostics
 │   ├── geometry3d.py       # floor plane and 3D box fitting
@@ -69,11 +69,9 @@ dreamroom/
 │       ├── strokes.py      # polylines -> segment -> confirm
 │       └── reference.py    # reference line -> length in meters
 ├── scripts/
-│   ├── setup_simpleclick.sh      # clone repo + install deps + download weights
 │   ├── run_pipeline.py           # CLI entry point
-│   └── smoke_test_segmenter.py   # non-interactive segmenter test
-├── third_party/SimpleClick # cloned by setup (gitignored)
-├── weights/                # checkpoint (gitignored)
+│   └── smoke_test_segmenter.py   # remote segmentation smoke test
+├── third_party/            # optional Modal deployment sources
 └── outputs/                # per-run results (gitignored)
 ```
 
@@ -82,15 +80,10 @@ dreamroom/
 ```bash
 python3.10 -m venv .venv
 .venv/bin/pip install -r requirements.txt
-bash scripts/setup_simpleclick.sh   # clones SimpleClick, installs mmcv, downloads ~2.7 GB weights
+export DREAMROOM_SIMPLECLICK_ENDPOINT="https://blakestieper--simpleclick-interactive-segmentation-simpl-771f03.modal.run"
+export DREAMROOM_MOGE_ENDPOINT="https://blakestieper--moge-2-api-web.modal.run"
 export FAL_KEY="your-fal-api-key"
 export ARK_API_KEY="your-byteplus-modelark-api-key"
-```
-
-The checkpoint download can also be run directly:
-
-```bash
-.venv/bin/gdown 1GXk6q5fwKo2twkY5ZZGjVKCgJv7XeLAW -O weights/cocolvis_vit_huge.pth
 ```
 
 ## Run
@@ -110,11 +103,11 @@ To construct a replacement box, provide all three dimensions in meters:
 ```
 
 Options: `--output-dir`, `--max-side`, `--threshold`, `--max-display-width`,
-`--no-flip` (about 2x faster segmentation on CPU, slightly lower quality),
 `--moge-endpoint`, `--moge-timeout`, `--sam3-model`, `--sam3-timeout`,
 `--sam3-min-score`, `--new-dimensions WIDTH DEPTH HEIGHT`, `--debug`,
 `--furniture`, `--seedream-endpoint`, `--seedream-model`,
-`--seedream-timeout`, and `--skip-moge` (run only steps 0-2). Seedream settings
+`--seedream-timeout`, and `--skip-moge` (run only the interactive selection and
+reference flow). Seedream settings
 can also be overridden with `DREAMROOM_SEEDREAM_ENDPOINT` and
 `DREAMROOM_SEEDREAM_MODEL`.
 
@@ -147,6 +140,12 @@ default and requests `include_mesh=false` and `include_debug=false` to reduce
 latency. Use `--debug` to request both flags as `true`, persist the full MoGe
 asset set, and generate `debug_3d.glb`. The endpoint can be overridden with
 `--moge-endpoint` or `DREAMROOM_MOGE_ENDPOINT`.
+
+Object segmentation uses the remote SimpleClick endpoint configured by
+`DREAMROOM_SIMPLECLICK_ENDPOINT`. The default is the deployed Modal service
+shown in the Setup section. Each request sends the working RGB image as a
+base64 PNG together with sampled positive/negative stroke points and receives
+a base64 PNG mask.
 
 MoGe-2 currently clamps the API input to a maximum side of 800 px, while the
 working image defaults to 1280 px. The confirmed mask is therefore resized
@@ -278,23 +277,18 @@ directory is written. MoGe-dependent tasks are reported as `skipped` when
 
 ## Notes
 
-- The checkpoint is loaded with `torch.load(..., mmap=True)` to keep peak RAM
-  near the model size (~2.7 GB). On machines with 8 GB RAM, close heavy apps
-  before running; a standard load peaks above 5 GB and can be OOM-killed.
-- Measured on a CPU-only 8 GB machine: model load ~1-2 min (one-time per
-  process), first segmentation ~38 s, subsequent segmentations on the same
-  image ~18 s (image features are cached). Use `--no-flip` to roughly halve
-  segmentation time. CUDA is used automatically when available.
-- SimpleClick compiles a small Cython extension on first model load; this is
-  normal and happens once (cached in `~/.pyxbld`).
-- Paths can be overridden with `DREAMROOM_SIMPLECLICK_ROOT` and
-  `DREAMROOM_CHECKPOINT`.
+- SimpleClick and MoGe run as remote Modal services; no local model weights or
+  SimpleClick checkout are required.
+- The SimpleClick endpoint can be overridden with
+  `DREAMROOM_SIMPLECLICK_ENDPOINT`.
+- The MoGe endpoint can be overridden with `DREAMROOM_MOGE_ENDPOINT` or the
+  `--moge-endpoint` CLI option.
 - MoGe can be skipped with `--skip-moge`, which is useful for validating the
   interactive object-selection and reference flow without the APIs.
 
 ## Test
 
 ```bash
-.venv/bin/python scripts/smoke_test_segmenter.py
+.venv/bin/python scripts/smoke_test_segmenter.py  # requires the SimpleClick service
 .venv/bin/python -m pytest -q tests
 ```

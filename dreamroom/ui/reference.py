@@ -49,8 +49,11 @@ class ReferenceScale:
 def prompt_meters() -> float | None:
     """Ask for a positive length in meters on the terminal."""
 
+    print("\n\n\n==================================")
+    print("enter the reference line length in meters (e.g. 1.8):")
+    print("==================================")
     try:
-        raw = input("  enter the reference line length in meters (e.g. 1.8): ").strip()
+        raw = input("  > ").strip()
     except EOFError:
         return None
     try:

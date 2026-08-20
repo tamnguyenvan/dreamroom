@@ -51,7 +51,7 @@ class OutputWriter:
                     "note": "original_coord = resized_coord * resize_scale",
                     "max_side": context.settings.max_side,
                     "threshold": context.settings.threshold,
-                    "checkpoint": context.settings.checkpoint_path.name,
+                    "simpleclick_endpoint": context.settings.simpleclick_endpoint,
                     "created": datetime.now().isoformat(timespec="seconds"),
                 },
                 indent=2,

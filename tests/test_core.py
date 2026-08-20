@@ -277,8 +277,9 @@ def test_pipeline_latency_stats(tmp_path, capsys):
 
     print_latency_stats(stats, report["summary"])
     output = capsys.readouterr().out
-    assert "moge_inference: skipped" in output
-    assert "[stats] concurrency:" in output
+    assert "render_furniture: skipped" in output
+    assert "moge_inference" not in output
+    assert "[stats] concurrency:" not in output
 
 
 def test_task_graph_runs_api_work_while_main_thread_handles_ui(tmp_path):

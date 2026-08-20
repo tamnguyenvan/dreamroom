@@ -127,18 +127,11 @@ def print_latency_stats(
     latency_seconds: dict[str, float | None],
     summary: dict[str, float] | None = None,
 ) -> None:
-    """Print the stable, user-facing latency summary."""
+    """Print the user-facing furniture-render latency summary."""
 
     print("[stats] latency:")
-    for name, seconds in latency_seconds.items():
-        if seconds is None:
-            print(f"  {name}: skipped")
-        else:
-            print(f"  {name}: {seconds:.3f}s")
-    if summary is not None:
-        print(
-            "[stats] concurrency: "
-            f"active {summary['active_task_seconds']:.3f}s, "
-            f"critical path {summary['critical_path_seconds']:.3f}s, "
-            f"saved {summary['concurrency_saved_seconds']:.3f}s"
-        )
+    seconds = latency_seconds.get("render_furniture")
+    if seconds is None:
+        print("  render_furniture: skipped")
+    else:
+        print(f"  render_furniture: {seconds:.3f}s")

@@ -1,4 +1,4 @@
-"""Select an object by drawing polylines and segmenting with SimpleClick.
+"""Select an object by drawing polylines and remote SimpleClick segmentation.
 
 Controls (annotate window):
     left-drag   positive polyline (red) - on the object
@@ -41,7 +41,7 @@ class ObjectSelection:
 
 
 class SelectObjectApp(WindowApp):
-    """Stroke annotation + SimpleClick segmentation with user confirmation."""
+    """Stroke annotation + remote SimpleClick segmentation with confirmation."""
 
     def __init__(
         self,
@@ -214,7 +214,7 @@ def select_object(
             return None
         positive, negative = strokes
         try:
-            print("[object] annotation complete; running SimpleClick...")
+            print("[object] annotation complete; calling remote SimpleClick...")
             mask = segment_fn(positive, negative)
         except Exception as exc:  # noqa: BLE001 - report and let the user retry
             app.message = f"segmentation failed: {exc}"

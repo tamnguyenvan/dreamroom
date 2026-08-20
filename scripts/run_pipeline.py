@@ -27,11 +27,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--threshold", type=float, default=None, help="mask threshold (default 0.49)")
     parser.add_argument("--max-display-width", type=int, default=None, help="UI window width limit")
     parser.add_argument(
-        "--no-flip",
-        action="store_true",
-        help="disable test-time flip (about 2x faster on CPU, slightly lower quality)",
-    )
-    parser.add_argument(
         "--moge-endpoint",
         default=None,
         help="MoGe-2 API URL (default: production deployment / DREAMROOM_MOGE_ENDPOINT)",
@@ -95,6 +90,8 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+    for noisy_logger in ("httpx", "httpcore", "fal", "fal_client"):
+        logging.getLogger(noisy_logger).setLevel(logging.WARNING)
 
     settings = Settings()
     overrides = {}
@@ -104,8 +101,6 @@ def main() -> None:
         overrides["threshold"] = args.threshold
     if args.max_display_width is not None:
         overrides["max_display_width"] = args.max_display_width
-    if args.no_flip:
-        overrides["with_flip"] = False
     if args.moge_endpoint is not None:
         overrides["moge_endpoint"] = args.moge_endpoint
     if args.moge_timeout is not None:

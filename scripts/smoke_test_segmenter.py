@@ -1,10 +1,10 @@
 #!/usr/bin/env python
-"""Non-interactive smoke test for the local SimpleClick port.
+"""Non-interactive smoke test for the remote SimpleClick service.
 
 Builds a synthetic image (dark circle on a light background), runs one
 segmentation with a positive point on the circle and a negative point on the
 background, then verifies that the mask covers the circle and excludes the
-background. Also verifies that a second call reuses cached image features.
+background.
 
 Usage:
     python scripts/smoke_test_segmenter.py
@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import logging
 import sys
-import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -52,9 +51,7 @@ def main() -> None:
     positive = [[320, 240]]  # circle center [x, y]
     negative = [[20, 20]]  # background corner
 
-    tic = time.time()
     mask = segmenter.segment(image, positive, negative)
-    first = time.time() - tic
     assert mask.shape == image.shape[:2]
     assert mask.dtype == bool
     assert mask[240, 320], "circle center must be inside the mask"
@@ -62,13 +59,10 @@ def main() -> None:
     area_fraction = float(mask.mean())
     assert 0.001 < area_fraction < 0.9, f"implausible mask area {area_fraction:.4f}"
 
-    tic = time.time()
     mask2 = segmenter.segment(image, positive + [[290, 240]], negative)
-    second = time.time() - tic
     assert mask2.shape == mask.shape
 
-    print(f"synthetic segmentation OK: area={area_fraction:.3f}, "
-          f"first={first:.1f}s, cached-image second={second:.1f}s")
+    print(f"synthetic remote segmentation OK: area={area_fraction:.3f}")
 
 
 if __name__ == "__main__":

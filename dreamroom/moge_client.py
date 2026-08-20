@@ -25,9 +25,11 @@ import cv2
 import numpy as np
 import requests
 
+from .config import DEFAULT_MOGE_ENDPOINT
+
 logger = logging.getLogger(__name__)
 
-DEFAULT_ENDPOINT = "https://mylove200795-production--moge-2-api-web.modal.run/predict"
+DEFAULT_ENDPOINT = f"{DEFAULT_MOGE_ENDPOINT.rstrip('/')}/predict"
 
 
 @dataclass
