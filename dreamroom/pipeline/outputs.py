@@ -80,6 +80,7 @@ class OutputWriter:
                 {
                     "box": context.box.to_dict(),
                     "floor_plane": context.floor.to_dict(),
+                    "floor_fit_method": context.floor_fit_method,
                     "scale_correction": context.scale_correction,
                     "calibration": context.calibration,
                     "coordinate_frame": "MoGe glb camera (+X right, +Y up, -Z forward), meters",
@@ -92,6 +93,8 @@ class OutputWriter:
                 {
                     "walls": [wall.to_dict() for wall in context.walls],
                     "floor_plane": context.floor.to_dict(),
+                    "floor_fit_method": context.floor_fit_method,
+                    "wall_fit_method": context.wall_fit_method,
                     "scale_correction": context.scale_correction,
                     "coordinate_frame": "MoGe glb camera (+X right, +Y up, -Z forward), meters",
                 },

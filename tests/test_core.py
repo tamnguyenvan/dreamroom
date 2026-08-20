@@ -25,6 +25,7 @@ from dreamroom.pipeline.models import PipelineContext
 from dreamroom.pipeline.outputs import OutputWriter
 from dreamroom.pipeline.runner import TaskGraphRunner
 from dreamroom.pipeline.stages.base import PipelineStage, StageStatus
+from dreamroom.pipeline.stages.geometry import GeometryStage
 from dreamroom.pipeline.stages.placement import PlacementStage
 from dreamroom.pipeline.stages.walls import WallStage
 from dreamroom.pipeline.timing import LatencyTracker, print_latency_stats
@@ -409,11 +410,118 @@ def test_wall_stage_visualizes_walls_only_in_debug(tmp_path, monkeypatch, debug)
     WallStage().run(context)
 
     assert context.walls[0] is wall
+    assert context.wall_fit_method == "sam3"
     assert calls["draw_walls"] is (context.walls if debug else None)
     if debug:
         assert calls["glb_walls"] is context.walls
     else:
         assert "glb_walls" not in calls
+
+
+def test_geometry_stage_falls_back_to_manual_floor_fit(tmp_path, monkeypatch):
+    image = np.zeros((10, 10, 3), dtype=np.uint8)
+    mask = np.zeros((10, 10), dtype=bool)
+    mask[2:8, 2:8] = True
+    floor = FloorPlane(
+        np.zeros(3), np.array([0.0, 1.0, 0.0]), 0.8, 100, fallback=False
+    )
+    box = Box3D(np.zeros(3), np.eye(3), np.ones(3))
+    calls = []
+
+    def fake_fit_floor(candidates):
+        calls.append(len(candidates))
+        return floor if len(candidates) else None
+
+    context = PipelineContext(
+        image_path=tmp_path / "room.png",
+        settings=Settings(),
+        image_bgr=image,
+        selection=ObjectSelection(mask, [], []),
+        moge=MogeResult(
+            np.zeros((10, 10, 3)),
+            {"image_size": [10, 10], "intrinsics": np.eye(3).tolist()},
+        ),
+        point_map=np.zeros((10, 10, 3)),
+        mask_pm=mask,
+        scale_correction=1.0,
+        floor_surface_mask_pm=np.zeros_like(mask),
+        rug_surface_mask_pm=np.zeros_like(mask),
+    )
+    monkeypatch.setattr(
+        "dreamroom.pipeline.stages.geometry.extract_object_points",
+        lambda *_: np.ones((100, 3)),
+    )
+    monkeypatch.setattr(
+        "dreamroom.pipeline.stages.geometry.floor_candidate_points",
+        lambda *_: np.ones((100, 3)),
+    )
+    monkeypatch.setattr(
+        "dreamroom.pipeline.stages.geometry.fit_floor_plane", fake_fit_floor
+    )
+    monkeypatch.setattr(
+        "dreamroom.pipeline.stages.geometry.fit_box", lambda *_: box
+    )
+
+    assert GeometryStage().run(context) is StageStatus.COMPLETED
+    assert calls == [0, 100]
+    assert context.floor is floor
+    assert context.floor_fit_method == "manual"
+
+
+def test_wall_stage_falls_back_to_global_manual_fit(tmp_path, monkeypatch):
+    image = np.zeros((10, 10, 3), dtype=np.uint8)
+    mask = np.zeros((10, 10), dtype=bool)
+    floor = FloorPlane(np.zeros(3), np.array([0.0, 1.0, 0.0]), 1.0, 100)
+    box = Box3D(np.zeros(3), np.eye(3), np.ones(3))
+    wall = WallPlane(
+        point=np.array([0.0, 0.0, -2.0]),
+        normal=np.array([0.0, 0.0, 1.0]),
+        corners=np.array(
+            [[-1.0, 0.0, -2.0], [1.0, 0.0, -2.0], [1.0, 2.0, -2.0], [-1.0, 2.0, -2.0]]
+        ),
+        inlier_count=100,
+        num_candidates=200,
+        rmse=0.01,
+        width=2.0,
+        height=2.0,
+        confidence=0.8,
+    )
+    context = PipelineContext(
+        image_path=tmp_path / "room.png",
+        settings=Settings(),
+        image_bgr=image,
+        selection=ObjectSelection(mask, [], []),
+        moge=MogeResult(
+            np.zeros((10, 10, 3)),
+            {"image_size": [10, 10], "intrinsics": np.eye(3).tolist()},
+            glb_bytes=b"source",
+        ),
+        point_map=np.zeros((10, 10, 3)),
+        mask_pm=mask,
+        scale_correction=1.0,
+        floor=floor,
+        box=box,
+        surface_segmentation=SurfaceSegmentation(
+            masks={"wall": [], "floor": [], "rug": []},
+            image_shape=(10, 10),
+            model="test",
+        ),
+    )
+    monkeypatch.setattr(
+        "dreamroom.pipeline.stages.walls.fit_segmented_wall_planes",
+        lambda *args: [],
+    )
+    monkeypatch.setattr(
+        "dreamroom.pipeline.stages.walls.fit_wall_planes",
+        lambda *args: [wall],
+    )
+    monkeypatch.setattr(
+        "dreamroom.pipeline.stages.walls.draw_debug_2d", lambda *args: image
+    )
+
+    assert WallStage().run(context) is StageStatus.COMPLETED
+    assert context.walls == [wall]
+    assert context.wall_fit_method == "manual"
 
 
 def test_pipeline_run_writes_latency_stats(tmp_path, monkeypatch):

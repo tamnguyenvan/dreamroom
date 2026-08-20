@@ -175,10 +175,12 @@ returned metadata.
   MoGe units to meters.
 - Valid masked points are extracted with light erosion and radial outlier
   clipping.
-- Only points selected by the union of the SAM floor and rug masks are used
-  for constrained RANSAC floor-plane fitting. Selected-object pixels are
-  excluded. If the floor cannot be recovered, a camera-up fallback plane is
-  used and marked in the output.
+- By default, points selected by the union of the SAM floor and rug masks are
+  used for constrained RANSAC floor-plane fitting. Selected-object pixels are
+  excluded. If SAM 3 is unavailable or its fit is too weak, the older manual
+  fallback fits RANSAC to non-object points in the bottom half of the image;
+  if that also fails, a camera-up plane is used. The selected method is marked
+  in `box3d.json` and `walls3d.json` (`sam3`, `manual`, or `camera_up`).
 - Object points are transformed into the floor frame. A minimum-area 2D
   footprint and robust height percentile produce the oriented box.
 - In `--debug` mode, `debug_3d.glb` scales the original MoGe scene with the
@@ -187,8 +189,10 @@ returned metadata.
 
 ### Segmented wall planes
 
-- Wall candidates come only from SAM wall masks; the selected object and points
-  too close to or too far above the floor are excluded.
+- By default, wall candidates come from SAM wall masks; the selected object and
+  points too close to or too far above the floor are excluded. If SAM 3 is
+  unavailable or produces no accepted wall, the manual fallback runs the
+  global point-cloud wall RANSAC from all eligible non-object pixels.
 - Vertical 3D wall fitting is reduced to line RANSAC in the fitted floor frame.
   Each SAM instance can produce up to two planes and each result is refined
   with total least squares.
@@ -251,8 +255,10 @@ Each run writes `outputs/<image-name>-<timestamp>/`:
 - `output.glb` — original MoGe textured scene in native MoGe coordinates (debug mode).
 - `moge_metadata.json` — point-map size, camera convention, and normalized intrinsics (debug mode).
 - `depth.png` / `normal.png` — MoGe debug previews (debug mode).
-- `box3d.json` — calibrated box center, axes, extents, corners, floor plane, and scale correction.
-- `walls3d.json` — detected wall planes, finite corners, support, residual, and confidence.
+- `box3d.json` — calibrated box center, axes, extents, corners, floor plane,
+  scale correction, and the floor fitting method used.
+- `walls3d.json` — detected wall planes, finite corners, support, residual,
+  confidence, and the floor/wall fitting methods used (`sam3` or `manual`).
 - `surfaces.json` — SAM 3 prompts, accepted mask scores, boxes, and areas.
 - `sam3_floor_mask.png` / `sam3_rug_mask.png` / `sam3_wall_mask.png` — combined semantic masks (debug mode).
 - `debug_surfaces_2d.png` — clean SAM surface-mask overlay (debug mode).

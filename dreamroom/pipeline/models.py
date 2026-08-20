@@ -39,7 +39,9 @@ class PipelineContext:
     wall_surface_masks_pm: list[np.ndarray] = field(default_factory=list)
     box: Box3D | None = None
     floor: FloorPlane | None = None
+    floor_fit_method: str | None = None
     walls: list[WallPlane] = field(default_factory=list)
+    wall_fit_method: str | None = None
     placement_orientation: PlacementOrientation | None = None
     target_placement: TargetBoxPlacement | None = None
     debug_2d: np.ndarray | None = None
@@ -67,7 +69,9 @@ class PipelineResult:
     surface_segmentation: SurfaceSegmentation | None = None
     box: Box3D | None = None
     floor: FloorPlane | None = None
+    floor_fit_method: str | None = None
     walls: list[WallPlane] = field(default_factory=list)
+    wall_fit_method: str | None = None
     placement_orientation: PlacementOrientation | None = None
     target_placement: TargetBoxPlacement | None = None
     rendered_image: bytes | None = None
@@ -91,7 +95,9 @@ class PipelineResult:
             surface_segmentation=context.surface_segmentation,
             box=context.box,
             floor=context.floor,
+            floor_fit_method=context.floor_fit_method,
             walls=context.walls,
+            wall_fit_method=context.wall_fit_method,
             placement_orientation=context.placement_orientation,
             target_placement=context.target_placement,
             rendered_image=context.rendered_image,

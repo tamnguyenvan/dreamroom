@@ -126,6 +126,24 @@ def test_surface_stage_resizes_masks_and_keeps_debug_separate(tmp_path, debug):
         assert context.debug_surfaces_2d is None
 
 
+def test_surface_stage_failure_allows_manual_geometry_fallback(tmp_path):
+    image = np.zeros((8, 10, 3), dtype=np.uint8)
+
+    class FailingClient:
+        def segment_surfaces(self, value):
+            raise RuntimeError("SAM3 timeout")
+
+    context = PipelineContext(
+        image_path=tmp_path / "room.png",
+        settings=Settings(),
+        image_bgr=image,
+    )
+
+    assert SurfaceStage(lambda _: FailingClient()).run(context) is StageStatus.SKIPPED
+    assert context.surface_segmentation is None
+    assert SurfaceMaskStage().run(context) is StageStatus.SKIPPED
+
+
 def test_surface_outputs_are_separate_debug_assets(tmp_path):
     mask = np.zeros((6, 8), dtype=bool)
     mask[2:5, 2:7] = True

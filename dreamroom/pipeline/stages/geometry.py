@@ -7,6 +7,7 @@ from ...geometry3d import (
     fallback_floor_plane,
     fit_box,
     fit_floor_plane,
+    floor_candidate_points,
     segmented_surface_points,
 )
 from ..models import PipelineContext
@@ -29,28 +30,50 @@ class GeometryStage(PipelineStage):
             or context.point_map is None
             or context.mask_pm is None
             or context.scale_correction is None
-            or context.floor_surface_mask_pm is None
-            or context.rug_surface_mask_pm is None
         ):
-            raise RuntimeError("point-map and surface preparation must finish first")
+            raise RuntimeError("point-map preparation must finish first")
 
-        print("[geometry] fitting SAM-selected floor plane and 3D box...")
+        print("[geometry] fitting floor plane and 3D box...")
         object_points = extract_object_points(context.point_map, context.mask_pm)
-        floor_and_rug = context.floor_surface_mask_pm | context.rug_surface_mask_pm
-        floor_points = segmented_surface_points(
-            context.point_map,
-            floor_and_rug,
-            context.mask_pm,
-        )
-        context.floor = fit_floor_plane(
-            floor_points
-        )
+        floor_points = None
+        context.floor = None
+        if (
+            context.floor_surface_mask_pm is not None
+            and context.rug_surface_mask_pm is not None
+        ):
+            try:
+                floor_and_rug = (
+                    context.floor_surface_mask_pm | context.rug_surface_mask_pm
+                )
+                floor_points = segmented_surface_points(
+                    context.point_map,
+                    floor_and_rug,
+                    context.mask_pm,
+                )
+                context.floor = fit_floor_plane(floor_points)
+                if context.floor is not None:
+                    context.floor_fit_method = "sam3"
+            except Exception as exc:
+                print(f"[geometry] SAM3 floor fit failed: {exc}")
+
         if context.floor is None:
-            context.floor = fallback_floor_plane(object_points)
-            print("[geometry] floor not found; using fallback camera-up plane")
+            manual_points = floor_candidate_points(context.point_map, context.mask_pm)
+            context.floor = fit_floor_plane(manual_points)
+            if context.floor is not None:
+                context.floor_fit_method = "manual"
+                print(
+                    "[geometry] SAM3 floor fit unavailable; "
+                    "using manual bottom-image point-cloud fallback"
+                )
+            else:
+                context.floor = fallback_floor_plane(object_points)
+                context.floor_fit_method = "camera_up"
+                print("[geometry] floor not found; using fallback camera-up plane")
         context.box = fit_box(object_points, context.floor)
+        source = context.floor_fit_method or "unknown"
         print(
-            f"[geometry] floor candidates: {len(floor_points)}, "
+            f"[geometry] floor source: {source}, "
+            f"SAM3 candidates: {len(floor_points) if floor_points is not None else 0}, "
             f"box extents (m): {context.box.extents[0]:.2f} x "
             f"{context.box.extents[1]:.2f} x {context.box.extents[2]:.2f}, "
             f"scale correction x{context.calibration.get('factor', 1.0):.3f}"

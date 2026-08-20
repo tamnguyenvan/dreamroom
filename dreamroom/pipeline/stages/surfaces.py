@@ -35,9 +35,17 @@ class SurfaceStage(PipelineStage):
             raise RuntimeError("resize must finish before SAM 3 segmentation")
 
         print("[surfaces] segmenting walls, floor, and rug with SAM 3...")
-        context.surface_segmentation = self._client_factory(context).segment_surfaces(
-            context.image_bgr
-        )
+        try:
+            context.surface_segmentation = self._client_factory(
+                context
+            ).segment_surfaces(context.image_bgr)
+        except Exception as exc:
+            context.surface_segmentation = None
+            print(
+                f"[surfaces] SAM3 unavailable ({exc}); "
+                "floor/wall fitting will use manual fallbacks"
+            )
+            return StageStatus.SKIPPED
         segmentation = context.surface_segmentation
         print(
             f"[surfaces] masks: {len(segmentation.instances('wall'))} wall, "
@@ -63,7 +71,8 @@ class SurfaceMaskStage(PipelineStage):
             or context.moge is None
             or context.surface_segmentation is None
         ):
-            raise RuntimeError("SAM 3 and MoGe results are required")
+            print("[surface-masks] skipped (SAM3 result unavailable)")
+            return StageStatus.SKIPPED
 
         pm_w, pm_h = context.moge.image_size
         context.floor_surface_mask_pm = resize_mask(

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from ...viz3d import draw_debug_2d, export_debug_glb, intrinsics_px
-from ...wall_geometry import fit_segmented_wall_planes
+from ...wall_geometry import fit_segmented_wall_planes, fit_wall_planes
 from ..models import PipelineContext
 from .base import PipelineStage, StageStatus
 
@@ -26,17 +26,37 @@ class WallStage(PipelineStage):
             or context.scale_correction is None
             or context.floor is None
             or context.box is None
-            or context.surface_segmentation is None
         ):
             raise RuntimeError("geometry fitting must finish before wall fitting")
 
-        print("[walls] fitting planes from SAM-selected pixels...")
-        context.walls = fit_segmented_wall_planes(
-            context.point_map,
-            context.wall_surface_masks_pm,
-            context.mask_pm,
-            context.floor,
-        )
+        context.walls = []
+        context.wall_fit_method = None
+        if context.surface_segmentation is not None:
+            print("[walls] fitting planes from SAM-selected pixels...")
+            try:
+                context.walls = fit_segmented_wall_planes(
+                    context.point_map,
+                    context.wall_surface_masks_pm,
+                    context.mask_pm,
+                    context.floor,
+                )
+            except Exception as exc:
+                print(f"[walls] SAM3 wall fit failed: {exc}")
+            if context.walls:
+                context.wall_fit_method = "sam3"
+
+        if not context.walls:
+            print(
+                "[walls] SAM3 wall fit unavailable; "
+                "using manual global point-cloud fallback"
+            )
+            context.walls = fit_wall_planes(
+                context.point_map,
+                context.mask_pm,
+                context.floor,
+            )
+            context.wall_fit_method = "manual"
+
         print(f"[walls] detected {len(context.walls)} wall plane(s)")
         for index, wall in enumerate(context.walls, start=1):
             print(
