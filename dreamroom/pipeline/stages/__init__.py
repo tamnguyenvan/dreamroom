@@ -5,6 +5,7 @@ from .geometry import GeometryStage
 from .moge import MogeStage
 from .placement import PlacementStage
 from .reference import ReferenceStage
+from .render import RenderStage
 from .resize import ResizeStage
 from .selection import SelectionStage
 from .surfaces import SurfaceStage
@@ -15,6 +16,7 @@ __all__ = [
     "MogeStage",
     "PlacementStage",
     "ReferenceStage",
+    "RenderStage",
     "ResizeStage",
     "SelectionStage",
     "StageStatus",

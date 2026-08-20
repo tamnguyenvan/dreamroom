@@ -17,6 +17,7 @@ from .stages import (
     MogeStage,
     PlacementStage,
     ReferenceStage,
+    RenderStage,
     ResizeStage,
     SelectionStage,
     SurfaceStage,
@@ -56,6 +57,7 @@ class FurniturePipeline:
             GeometryStage(),
             WallStage(),
             PlacementStage(),
+            RenderStage(),
         ]
 
     def run(self, image_path: str | Path, output_dir: str | Path | None = None) -> PipelineResult | None:

@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Run the furniture replacement pipeline (steps 0-7) on one image.
+"""Run the furniture replacement pipeline (steps 0-8) on one image.
 
 Example:
     python scripts/run_pipeline.py --image path/to/room.jpg
@@ -59,6 +59,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--new-width", type=float, default=None, help="target width in meters")
     parser.add_argument("--new-depth", type=float, default=None, help="target depth in meters")
     parser.add_argument("--new-height", type=float, default=None, help="target height in meters")
+    parser.add_argument(
+        "--furniture",
+        type=Path,
+        default=None,
+        help="furniture reference image; requires all three --new-* dimensions",
+    )
+    parser.add_argument("--seedream-endpoint", default=None, help="Seedream API URL")
+    parser.add_argument("--seedream-model", default=None, help="Seedream model ID")
+    parser.add_argument(
+        "--seedream-timeout", type=float, default=None, help="Seedream request timeout (s)"
+    )
     parser.add_argument("--skip-moge", action="store_true", help="run only steps 0-2")
     args = parser.parse_args()
     dimensions = (args.new_width, args.new_depth, args.new_height)
@@ -69,6 +80,8 @@ def parse_args() -> argparse.Namespace:
             parser.error("target dimensions must be positive")
     if args.sam3_min_score is not None and not 0.0 <= args.sam3_min_score <= 1.0:
         parser.error("--sam3-min-score must be between 0 and 1")
+    if args.furniture is not None and not all(value is not None for value in dimensions):
+        parser.error("--furniture requires --new-width, --new-depth, and --new-height")
     return args
 
 
@@ -100,6 +113,14 @@ def main() -> None:
         overrides["target_width_m"] = args.new_width
         overrides["target_depth_m"] = args.new_depth
         overrides["target_height_m"] = args.new_height
+    if args.furniture is not None:
+        overrides["furniture_path"] = args.furniture
+    if args.seedream_endpoint is not None:
+        overrides["seedream_endpoint"] = args.seedream_endpoint
+    if args.seedream_model is not None:
+        overrides["seedream_model"] = args.seedream_model
+    if args.seedream_timeout is not None:
+        overrides["seedream_timeout"] = args.seedream_timeout
     if args.debug:
         overrides["debug"] = True
     if args.skip_moge:

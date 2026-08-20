@@ -7,6 +7,7 @@ Environment variables are read once at import time:
 - ``DREAMROOM_MOGE_ENDPOINT``: optional MoGe-2 endpoint override.
 - ``DREAMROOM_SAM3_MODEL``: optional fal.ai SAM 3 model ID override.
 - ``FAL_KEY``: fal.ai API credential consumed by ``fal-client``.
+- ``ARK_API_KEY``: BytePlus ModelArk API credential for Seedream rendering.
 """
 
 from __future__ import annotations
@@ -59,6 +60,17 @@ class Settings:
     target_width_m: float | None = None
     target_depth_m: float | None = None
     target_height_m: float | None = None
+
+    # Step 8: optional Seedream furniture render
+    furniture_path: Path | None = None
+    seedream_endpoint: str = os.getenv(
+        "DREAMROOM_SEEDREAM_ENDPOINT",
+        "https://ark.ap-southeast.bytepluses.com/api/v3/images/generations",
+    )
+    seedream_model: str = os.getenv(
+        "DREAMROOM_SEEDREAM_MODEL", "dola-seedream-5-0-pro-260628"
+    )
+    seedream_timeout: float = 300.0
 
     # UI
     max_display_width: int = 1200

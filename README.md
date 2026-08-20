@@ -1,6 +1,6 @@
 # dreamroom
 
-Furniture replacement pipeline. Current scope: steps 0-7.
+Furniture replacement pipeline. Current scope: steps 0-8.
 
 - **Step 0** — resize the input so its longest side is 1280 px.
 - **Step 1** — select an object: draw polylines in an OpenCV window, segment
@@ -18,6 +18,8 @@ Furniture replacement pipeline. Current scope: steps 0-7.
   floor-anchored wall planes.
 - **Step 7** — infer a geometry-only placement orientation from the old box
   and walls, then optionally construct a floor-contact replacement box.
+- **Step 8** — draw the target box on the room image, resize the furniture
+  reference to max-side 512, and render the replacement with Seedream 5.0 Pro.
 
 ## Project layout
 
@@ -33,6 +35,8 @@ dreamroom/
 │   ├── wall_geometry.py    # step 6: segmented wall-plane fitting
 │   ├── placement_geometry.py # step 7: placement orientation and target box
 │   ├── placement_viz.py    # separate step-7 debug image and GLB
+│   ├── render_viz.py       # step 8: red target-box input image
+│   ├── seedream_client.py  # step 8: BytePlus ModelArk render client
 │   ├── moge_client.py      # step 3: MoGe-2 API client and response parser
 │   ├── pipeline/            # ordered stages, context, timing, and outputs
 │   │   ├── __init__.py      # FurniturePipeline facade
@@ -60,6 +64,7 @@ python3.10 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 bash scripts/setup_simpleclick.sh   # clones SimpleClick, installs mmcv, downloads ~2.7 GB weights
 export FAL_KEY="your-fal-api-key"
+export ARK_API_KEY="your-byteplus-modelark-api-key"
 ```
 
 The checkpoint download can also be run directly:
@@ -80,6 +85,7 @@ To construct a replacement box, provide all three dimensions in meters:
 .venv/bin/python scripts/run_pipeline.py \
   --image path/to/room.jpg \
   --new-width 1.8 --new-depth 0.9 --new-height 0.8 \
+  --furniture path/to/new-furniture.jpg \
   --debug
 ```
 
@@ -87,7 +93,10 @@ Options: `--output-dir`, `--max-side`, `--threshold`, `--max-display-width`,
 `--no-flip` (about 2x faster segmentation on CPU, slightly lower quality),
 `--moge-endpoint`, `--moge-timeout`, `--sam3-model`, `--sam3-timeout`,
 `--sam3-min-score`, `--new-width`, `--new-depth`, `--new-height`, `--debug`,
-and `--skip-moge` (run only steps 0-2).
+`--furniture`, `--seedream-endpoint`, `--seedream-model`,
+`--seedream-timeout`, and `--skip-moge` (run only steps 0-2). Seedream settings
+can also be overridden with `DREAMROOM_SEEDREAM_ENDPOINT` and
+`DREAMROOM_SEEDREAM_MODEL`.
 
 ### Step 1 controls
 
@@ -192,6 +201,23 @@ returned metadata.
   `debug_placement_3d.glb` files instead of adding more overlays to the existing
   geometry debug assets.
 
+### Step 8: Seedream render
+
+- `--furniture` requires all three replacement dimensions. The furniture image
+  is loaded locally and resized to max-side 512 with aspect ratio preserved.
+- A clean copy of the working room image receives the fitted target box as a
+  red 3D wireframe projected with the MoGe camera intrinsics.
+- Seedream receives exactly two independent image inputs: Image 1 is the room
+  with the red guide box, and Image 2 is the furniture reference. They are not
+  stitched or composited together.
+- The default request uses `dola-seedream-5-0-pro-260628`, AP Southeast,
+  `size=1K`, `response_format=url`, `output_format=jpeg`, watermark disabled,
+  and `optimize_prompt_options.mode=fast` for lower latency. `ARK_API_KEY` is
+  required.
+- The prompt instructs Seedream to replace only the old furniture, match the
+  target box dimensions/perspective/floor contact, preserve the room, and
+  remove the red guide box from the final image.
+
 ## Outputs
 
 Each run writes `outputs/<image-name>-<timestamp>/`:
@@ -213,6 +239,10 @@ Each run writes `outputs/<image-name>-<timestamp>/`:
 - `debug_surfaces_2d.png` — clean SAM surface-mask overlay (debug mode).
 - `placement.json` — placement mode, selected faces/walls, confidence, and per-face evidence.
 - `target_box3d.json` — replacement box and placement diagnostics when dimensions were supplied.
+- `render_room_target_box.png` — room input with the red target-box guide.
+- `render_furniture_reference.png` — resized furniture input (max-side 512).
+- `rendered_furniture.jpg` — downloaded Seedream output.
+- `render.json` — Seedream URL, timing, usage, prompt, and input metadata.
 - `debug_2d.png` — fitted geometry reprojected onto the working image; wall overlays are debug-only.
 - `debug_3d.glb` — calibrated MoGe scene with box, floor, and wall overlays (debug mode).
 - `debug_placement_2d.png` — clean face evidence and target-box overlay (debug mode).
@@ -220,7 +250,7 @@ Each run writes `outputs/<image-name>-<timestamp>/`:
 - `stats.json` — per-step latency in seconds, output-save time, and total runtime.
 
 The CLI also prints the same latency summary after the output directory is
-written. Steps 3-7 are reported as `skipped` when `--skip-moge` is used.
+written. Steps 3-8 are reported as `skipped` when `--skip-moge` is used.
 
 ## Notes
 

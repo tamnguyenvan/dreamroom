@@ -47,12 +47,16 @@ class PipelineContext:
     debug_surfaces_2d: np.ndarray | None = None
     debug_placement_2d: np.ndarray | None = None
     debug_placement_3d: bytes | None = None
+    render_room: np.ndarray | None = None
+    render_furniture: np.ndarray | None = None
+    rendered_image: bytes | None = None
+    render_metadata: dict | None = None
     latency_seconds: dict[str, float | None] = field(default_factory=dict)
 
 
 @dataclass
 class PipelineResult:
-    """Everything produced by steps 0-7 in a completed run."""
+    """Everything produced by steps 0-8 in a completed run."""
 
     output_dir: Path
     image_bgr: np.ndarray
@@ -66,6 +70,8 @@ class PipelineResult:
     walls: list[WallPlane] = field(default_factory=list)
     placement_orientation: PlacementOrientation | None = None
     target_placement: TargetBoxPlacement | None = None
+    rendered_image: bytes | None = None
+    render_metadata: dict | None = None
     scale_correction: float | None = None
     latency_seconds: dict[str, float | None] = field(default_factory=dict)
 
@@ -88,6 +94,8 @@ class PipelineResult:
             walls=context.walls,
             placement_orientation=context.placement_orientation,
             target_placement=context.target_placement,
+            rendered_image=context.rendered_image,
+            render_metadata=context.render_metadata,
             scale_correction=context.scale_correction,
             latency_seconds=context.latency_seconds,
         )

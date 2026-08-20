@@ -251,6 +251,7 @@ def test_pipeline_latency_stats(tmp_path, capsys):
         "step_5_fit_3d": None,
         "step_6_fit_walls": None,
         "step_7_target_box": None,
+        "step_8_render": None,
         "save_outputs": 0.4,
         "total": 2.0,
     }
@@ -365,6 +366,7 @@ def test_pipeline_run_writes_latency_stats(tmp_path, monkeypatch):
     assert stats["latency_seconds"]["step_5_fit_3d"] is None
     assert stats["latency_seconds"]["step_6_fit_walls"] is None
     assert stats["latency_seconds"]["step_7_target_box"] is None
+    assert stats["latency_seconds"]["step_8_render"] is None
     assert stats["latency_seconds"]["total"] >= stats["latency_seconds"]["step_0_resize"]
     assert result.latency_seconds == stats["latency_seconds"]
 
