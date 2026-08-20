@@ -15,7 +15,7 @@ from dreamroom.moge_client import MogeResult
 from dreamroom.pipeline.models import PipelineContext
 from dreamroom.pipeline.outputs import OutputWriter
 from dreamroom.pipeline.stages.base import StageStatus
-from dreamroom.pipeline.stages.render import RenderStage
+from dreamroom.pipeline.stages.render import FurnitureStage, RenderStage
 from dreamroom.placement_geometry import TargetBoxPlacement
 from dreamroom.render_viz import draw_target_box_2d
 from dreamroom.seedream_client import SeedreamClient, SeedreamResult
@@ -148,8 +148,10 @@ def test_render_stage_resizes_furniture_and_sends_two_inputs(tmp_path):
         target_placement=_target(),
     )
 
+    prepare_status = FurnitureStage().run(context)
     status = RenderStage(lambda _: FakeClient()).run(context)
 
+    assert prepare_status is StageStatus.COMPLETED
     assert status is StageStatus.COMPLETED
     assert context.render_room is not None
     assert context.render_furniture is not None

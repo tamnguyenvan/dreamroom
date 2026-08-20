@@ -26,12 +26,12 @@ def _env_path(name: str, default: Path) -> Path:
 
 @dataclass(frozen=True)
 class Settings:
-    """Runtime settings for the pipeline steps."""
+    """Runtime settings for pipeline tasks."""
 
-    # Step 0: resize
+    # Image preparation
     max_side: int = 1280
 
-    # Step 1: SimpleClick segmentation (ported from the Modal app)
+    # SimpleClick segmentation (ported from the Modal app)
     simpleclick_root: Path = _env_path(
         "DREAMROOM_SIMPLECLICK_ROOT", PROJECT_ROOT / "third_party" / "SimpleClick"
     )
@@ -45,23 +45,23 @@ class Settings:
     zoom_in_expansion: float = 1.4
     with_flip: bool = True  # disable on CPU for ~2x faster clicks
 
-    # Step 3: MoGe-2 API (production Modal endpoint is the default)
+    # MoGe-2 API (production Modal endpoint is the default)
     moge_enabled: bool = True
     debug: bool = False  # request and persist the slower MoGe debug assets
     moge_endpoint: str | None = os.getenv("DREAMROOM_MOGE_ENDPOINT") or None
     moge_timeout: float = 300.0
 
-    # Step 4: fal.ai SAM 3 room-surface segmentation
+    # fal.ai SAM 3 room-surface segmentation
     sam3_model: str = os.getenv("DREAMROOM_SAM3_MODEL", "fal-ai/sam-3/image")
     sam3_timeout: float = 300.0
     sam3_min_score: float = 0.25
 
-    # Step 7: optional replacement dimensions in meters
+    # Optional replacement dimensions in meters
     target_width_m: float | None = None
     target_depth_m: float | None = None
     target_height_m: float | None = None
 
-    # Step 8: optional Seedream furniture render
+    # Optional Seedream furniture render
     furniture_path: Path | None = None
     seedream_endpoint: str = os.getenv(
         "DREAMROOM_SEEDREAM_ENDPOINT",

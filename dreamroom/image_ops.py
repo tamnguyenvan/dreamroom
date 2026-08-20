@@ -1,4 +1,4 @@
-"""Image loading, saving and step-0 resize helpers."""
+"""Image loading, saving, and resize helpers."""
 
 from __future__ import annotations
 

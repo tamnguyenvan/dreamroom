@@ -1,4 +1,4 @@
-"""Step 5: floor fitting and floor-aligned object-box fitting."""
+"""Floor fitting and floor-aligned object-box fitting."""
 
 from __future__ import annotations
 
@@ -14,11 +14,13 @@ from .base import PipelineStage, StageStatus
 
 
 class GeometryStage(PipelineStage):
-    name = "step_5_fit_3d"
+    name = "fit_geometry"
+    dependencies = ("prepare_point_map", "prepare_surface_masks")
+    background = True
 
     def run(self, context: PipelineContext) -> StageStatus:
         if not context.settings.moge_enabled:
-            print("[step 5] skipped (moge disabled)")
+            print("[geometry] skipped (moge disabled)")
             return StageStatus.SKIPPED
         if (
             context.image_bgr is None
@@ -30,9 +32,9 @@ class GeometryStage(PipelineStage):
             or context.floor_surface_mask_pm is None
             or context.rug_surface_mask_pm is None
         ):
-            raise RuntimeError("Steps 0-4 must run before 3D fitting")
+            raise RuntimeError("point-map and surface preparation must finish first")
 
-        print("[step 5] fitting SAM-selected floor plane and 3D box...")
+        print("[geometry] fitting SAM-selected floor plane and 3D box...")
         object_points = extract_object_points(context.point_map, context.mask_pm)
         floor_and_rug = context.floor_surface_mask_pm | context.rug_surface_mask_pm
         floor_points = segmented_surface_points(
@@ -45,10 +47,10 @@ class GeometryStage(PipelineStage):
         )
         if context.floor is None:
             context.floor = fallback_floor_plane(object_points)
-            print("[step 5] floor not found; using fallback camera-up plane")
+            print("[geometry] floor not found; using fallback camera-up plane")
         context.box = fit_box(object_points, context.floor)
         print(
-            f"[step 5] floor candidates: {len(floor_points)}, "
+            f"[geometry] floor candidates: {len(floor_points)}, "
             f"box extents (m): {context.box.extents[0]:.2f} x "
             f"{context.box.extents[1]:.2f} x {context.box.extents[2]:.2f}, "
             f"scale correction x{context.calibration.get('factor', 1.0):.3f}"

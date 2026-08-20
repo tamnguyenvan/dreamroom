@@ -1,4 +1,4 @@
-"""Step 1: select an object by drawing polylines and segmenting with SimpleClick.
+"""Select an object by drawing polylines and segmenting with SimpleClick.
 
 Controls (annotate window):
     left-drag   positive polyline (red) - on the object
@@ -33,7 +33,7 @@ SegmentFn = Callable[[list[list[int]], list[list[int]]], np.ndarray]
 
 @dataclass
 class ObjectSelection:
-    """Confirmed step-1 result (image coordinates of the resized image)."""
+    """Confirmed object selection in resized-image coordinates."""
 
     mask: np.ndarray
     positive_points: list[list[int]]
@@ -50,7 +50,7 @@ class SelectObjectApp(WindowApp):
         max_points: int = 24,
         max_display_width: int = 1200,
     ) -> None:
-        super().__init__(image_bgr, "dreamroom | step 1: select object", max_display_width)
+        super().__init__(image_bgr, "dreamroom | select object", max_display_width)
         self._segment_fn = segment_fn
         self.max_points = max_points
         self.strokes: list[tuple[bool, list[list[int]]]] = []
@@ -214,7 +214,7 @@ def select_object(
             return None
         positive, negative = strokes
         try:
-            print("[step 1] annotation window closed; running SimpleClick...")
+            print("[object] annotation complete; running SimpleClick...")
             mask = segment_fn(positive, negative)
         except Exception as exc:  # noqa: BLE001 - report and let the user retry
             app.message = f"segmentation failed: {exc}"

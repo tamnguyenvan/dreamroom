@@ -148,7 +148,5 @@ class OutputWriter:
             )
 
     @staticmethod
-    def write_stats(out_dir: Path, latency_seconds: dict[str, float | None]) -> None:
-        (out_dir / "stats.json").write_text(
-            json.dumps({"latency_seconds": latency_seconds}, indent=2)
-        )
+    def write_stats(out_dir: Path, report: dict) -> None:
+        (out_dir / "stats.json").write_text(json.dumps(report, indent=2))

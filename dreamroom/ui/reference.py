@@ -1,4 +1,4 @@
-"""Step 2: draw a reference line and enter its real-world length in meters.
+"""Draw a reference line and enter its real-world length in meters.
 
 Controls:
     console     enter the known line length before opening the window
@@ -24,7 +24,7 @@ MIN_LINE_LENGTH_PX = 5.0
 
 @dataclass
 class ReferenceScale:
-    """Confirmed step-2 result: maps pixels to real-world meters."""
+    """Confirmed reference scale mapping pixels to real-world meters."""
 
     start: list[int]
     end: list[int]
@@ -74,7 +74,7 @@ class ReferenceLineApp(WindowApp):
         max_display_width: int = 1200,
         meters: float | None = None,
     ) -> None:
-        super().__init__(image_bgr, "dreamroom | step 2: reference scale", max_display_width)
+        super().__init__(image_bgr, "dreamroom | reference scale", max_display_width)
         self.mask = mask
         self.start: list[int] | None = None
         self.end: list[int] | None = None

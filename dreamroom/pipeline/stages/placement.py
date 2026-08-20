@@ -1,4 +1,4 @@
-"""Step 7: heuristic placement orientation and target-box construction."""
+"""Heuristic placement orientation and target-box construction."""
 
 from __future__ import annotations
 
@@ -13,11 +13,13 @@ from .base import PipelineStage, StageStatus
 
 
 class PlacementStage(PipelineStage):
-    name = "step_7_target_box"
+    name = "target_box"
+    dependencies = ("fit_walls",)
+    background = True
 
     def run(self, context: PipelineContext) -> StageStatus:
         if not context.settings.moge_enabled:
-            print("[step 7] skipped (moge disabled)")
+            print("[target-box] skipped (moge disabled)")
             return StageStatus.SKIPPED
         if (
             context.image_bgr is None
@@ -29,9 +31,9 @@ class PlacementStage(PipelineStage):
             or context.floor is None
             or context.box is None
         ):
-            raise RuntimeError("Steps 0-6 must run before target-box placement")
+            raise RuntimeError("geometry and wall fitting must finish before placement")
 
-        print("[step 7] inferring geometry-only placement orientation...")
+        print("[target-box] inferring geometry-only placement orientation...")
         context.placement_orientation = infer_placement_orientation(
             context.box,
             context.floor,
@@ -41,7 +43,7 @@ class PlacementStage(PipelineStage):
         )
         orientation = context.placement_orientation
         print(
-            f"[step 7] {orientation.mode}: rear "
+            f"[target-box] {orientation.mode}: rear "
             f"{orientation.primary_rear_face or 'unknown'}, "
             f"confidence {orientation.confidence:.2f}"
         )
@@ -66,7 +68,7 @@ class PlacementStage(PipelineStage):
             if context.target_placement is not None:
                 extents = context.target_placement.box.extents
                 print(
-                    f"[step 7] target box (m): {extents[0]:.2f} x "
+                    f"[target-box] target box (m): {extents[0]:.2f} x "
                     f"{extents[1]:.2f} x {extents[2]:.2f} "
                     f"[{context.target_placement.anchor_mode}]"
                 )

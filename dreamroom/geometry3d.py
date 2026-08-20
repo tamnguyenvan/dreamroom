@@ -1,7 +1,7 @@
-"""Step 5: map 2D masks into MoGe space and fit a floor-aligned 3D box.
+"""Map 2D masks into MoGe space and fit a floor-aligned 3D box.
 
 All 3D coordinates live in the MoGe glb camera frame: +X right, +Y up,
--Z forward, in meters (after the step-2 reference scale correction).
+-Z forward, in meters (after reference-scale correction).
 """
 
 from __future__ import annotations
@@ -108,7 +108,7 @@ def calibrate_scale(
     ref_end_xy: list[float],
     meters: float,
 ) -> tuple[float, dict]:
-    """Correction factor from the step-2 reference line (point-map coords).
+    """Correction factor from the reference line (point-map coordinates).
 
     Returns ``(factor, info)``; multiply the point map by ``factor`` so one
     unit equals one meter. Falls back to 1.0 with a warning in ``info``.

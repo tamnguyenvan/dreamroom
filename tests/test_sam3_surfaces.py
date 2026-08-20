@@ -16,7 +16,7 @@ from dreamroom.moge_client import MogeResult
 from dreamroom.pipeline.models import PipelineContext
 from dreamroom.pipeline.outputs import OutputWriter
 from dreamroom.pipeline.stages.base import StageStatus
-from dreamroom.pipeline.stages.surfaces import SurfaceStage
+from dreamroom.pipeline.stages.surfaces import SurfaceMaskStage, SurfaceStage
 from dreamroom.sam3_client import Sam3Client, Sam3Mask, SurfaceSegmentation
 
 
@@ -112,8 +112,10 @@ def test_surface_stage_resizes_masks_and_keeps_debug_separate(tmp_path, debug):
     )
 
     status = SurfaceStage(lambda _: FakeClient()).run(context)
+    mask_status = SurfaceMaskStage().run(context)
 
     assert status is StageStatus.COMPLETED
+    assert mask_status is StageStatus.COMPLETED
     assert context.floor_surface_mask_pm.shape == (4, 5)
     assert context.rug_surface_mask_pm.shape == (4, 5)
     assert len(context.wall_surface_masks_pm) == 1

@@ -1,4 +1,4 @@
-"""Shared state and public result models for the pipeline runner."""
+"""Shared state and public result models for the pipeline task graph."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ from ..wall_geometry import WallPlane
 
 @dataclass
 class PipelineContext:
-    """Mutable data passed between ordered pipeline stages."""
+    """Shared task data; concurrent tasks write disjoint fields."""
 
     image_path: Path
     settings: Settings
@@ -56,7 +56,7 @@ class PipelineContext:
 
 @dataclass
 class PipelineResult:
-    """Everything produced by steps 0-8 in a completed run."""
+    """Everything produced by a completed run."""
 
     output_dir: Path
     image_bgr: np.ndarray

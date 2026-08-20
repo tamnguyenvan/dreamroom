@@ -1,4 +1,4 @@
-"""Step 8: render replacement furniture with Seedream 5.0 Pro."""
+"""Furniture preprocessing and Seedream 5.0 Pro rendering tasks."""
 
 from __future__ import annotations
 
@@ -12,8 +12,31 @@ from ..models import PipelineContext
 from .base import PipelineStage, StageStatus
 
 
+class FurnitureStage(PipelineStage):
+    """Load and resize the furniture reference while geometry is computed."""
+
+    name = "prepare_furniture"
+    dependencies = ("resize",)
+    background = True
+
+    def run(self, context: PipelineContext) -> StageStatus:
+        if not context.settings.moge_enabled:
+            print("[furniture] skipped (moge disabled)")
+            return StageStatus.SKIPPED
+        if context.settings.furniture_path is None:
+            print("[furniture] skipped (no --furniture supplied)")
+            return StageStatus.SKIPPED
+        furniture = load_image_bgr(context.settings.furniture_path)
+        context.render_furniture, _ = resize_max_side(furniture, max_side=512)
+        height, width = context.render_furniture.shape[:2]
+        print(f"[furniture] prepared reference at {width}x{height}")
+        return StageStatus.COMPLETED
+
+
 class RenderStage(PipelineStage):
-    name = "step_8_render"
+    name = "render_furniture"
+    dependencies = ("target_box", "prepare_furniture")
+    background = True
 
     def __init__(
         self,
@@ -31,23 +54,22 @@ class RenderStage(PipelineStage):
 
     def run(self, context: PipelineContext) -> StageStatus:
         if context.settings.furniture_path is None:
-            print("[step 8] skipped (no --furniture supplied)")
+            print("[render] skipped (no --furniture supplied)")
             return StageStatus.SKIPPED
         if not context.settings.moge_enabled:
-            print("[step 8] skipped (moge disabled)")
+            print("[render] skipped (moge disabled)")
             return StageStatus.SKIPPED
         if (
             context.image_bgr is None
             or context.moge is None
             or context.target_placement is None
+            or context.render_furniture is None
         ):
             raise RuntimeError(
-                "Steps 0-7 must produce a target box before rendering; "
-                "provide all three --new-* dimensions"
+                "geometry and furniture preparation must finish before rendering; "
+                "provide --new-dimensions WIDTH DEPTH HEIGHT"
             )
 
-        furniture = load_image_bgr(context.settings.furniture_path)
-        furniture, _ = resize_max_side(furniture, max_side=512)
         pm_w, pm_h = context.moge.image_size
         room_with_box = draw_target_box_2d(
             context.image_bgr,
@@ -72,22 +94,21 @@ class RenderStage(PipelineStage):
             "photorealistic image. Do not add text, labels, or extra furniture."
         )
 
-        print("[step 8] calling Seedream 5.0 Pro (fast, 1K)...")
+        print("[render] calling Seedream 5.0 Pro (fast, 1K)...")
         result = self._client_factory(context).generate(
             room_with_box,
-            furniture,
+            context.render_furniture,
             prompt,
         )
         context.render_room = room_with_box
-        context.render_furniture = furniture
         context.rendered_image = result.image_bytes
         context.render_metadata = {
             **result.to_dict(),
             "prompt": prompt,
             "furniture_source": str(context.settings.furniture_path.resolve()),
             "room_input_size_hw": list(room_with_box.shape[:2]),
-            "furniture_input_size_hw": list(furniture.shape[:2]),
+            "furniture_input_size_hw": list(context.render_furniture.shape[:2]),
             "input_mode": "two_images",
         }
-        print(f"[step 8] rendered furniture in {result.elapsed_seconds:.1f}s")
+        print(f"[render] completed in {result.elapsed_seconds:.1f}s")
         return StageStatus.COMPLETED

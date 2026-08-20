@@ -1,4 +1,4 @@
-"""Step 4: text-prompted floor, rug, and wall segmentation with SAM 3."""
+"""Independent SAM 3 inference and point-map mask preparation tasks."""
 
 from __future__ import annotations
 
@@ -12,7 +12,9 @@ from .base import PipelineStage, StageStatus
 
 
 class SurfaceStage(PipelineStage):
-    name = "step_4_sam3_surfaces"
+    name = "sam3_surfaces"
+    dependencies = ("resize",)
+    background = True
 
     def __init__(self, client_factory: Callable[[PipelineContext], Sam3Client] | None = None):
         self._client_factory = client_factory or self._default_client
@@ -27,15 +29,42 @@ class SurfaceStage(PipelineStage):
 
     def run(self, context: PipelineContext) -> StageStatus:
         if not context.settings.moge_enabled:
-            print("[step 4] skipped (moge disabled)")
+            print("[surfaces] skipped (moge disabled)")
             return StageStatus.SKIPPED
-        if context.image_bgr is None or context.moge is None:
-            raise RuntimeError("Steps 0-3 must run before SAM 3 segmentation")
+        if context.image_bgr is None:
+            raise RuntimeError("resize must finish before SAM 3 segmentation")
 
-        print("[step 4] segmenting walls, floor, and rug with SAM 3...")
+        print("[surfaces] segmenting walls, floor, and rug with SAM 3...")
         context.surface_segmentation = self._client_factory(context).segment_surfaces(
             context.image_bgr
         )
+        segmentation = context.surface_segmentation
+        print(
+            f"[surfaces] masks: {len(segmentation.instances('wall'))} wall, "
+            f"{len(segmentation.instances('floor'))} floor, "
+            f"{len(segmentation.instances('rug'))} rug"
+        )
+        return StageStatus.COMPLETED
+
+
+class SurfaceMaskStage(PipelineStage):
+    """Resize SAM masks only after the MoGe point-map size is known."""
+
+    name = "prepare_surface_masks"
+    dependencies = ("sam3_surfaces", "moge_inference")
+    background = True
+
+    def run(self, context: PipelineContext) -> StageStatus:
+        if not context.settings.moge_enabled:
+            print("[surface-masks] skipped (moge disabled)")
+            return StageStatus.SKIPPED
+        if (
+            context.image_bgr is None
+            or context.moge is None
+            or context.surface_segmentation is None
+        ):
+            raise RuntimeError("SAM 3 and MoGe results are required")
+
         pm_w, pm_h = context.moge.image_size
         context.floor_surface_mask_pm = resize_mask(
             context.surface_segmentation.combined_mask("floor"), pm_w, pm_h
@@ -47,13 +76,9 @@ class SurfaceStage(PipelineStage):
             resize_mask(item.mask, pm_w, pm_h)
             for item in context.surface_segmentation.instances("wall")
         ]
-        print(
-            f"[step 4] masks: {len(context.wall_surface_masks_pm)} wall, "
-            f"{len(context.surface_segmentation.instances('floor'))} floor, "
-            f"{len(context.surface_segmentation.instances('rug'))} rug"
-        )
         if context.settings.debug:
             context.debug_surfaces_2d = draw_surface_debug_2d(
                 context.image_bgr, context.surface_segmentation
             )
+        print(f"[surface-masks] prepared at {pm_w}x{pm_h}")
         return StageStatus.COMPLETED

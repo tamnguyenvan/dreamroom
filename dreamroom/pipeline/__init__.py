@@ -1,8 +1,7 @@
-"""Extensible stage-based furniture replacement pipeline."""
+"""Extensible dependency-based furniture replacement pipeline."""
 
 from __future__ import annotations
 
-import time
 from pathlib import Path
 
 import numpy as np
@@ -11,15 +10,18 @@ from ..config import Settings
 from ..segmenter import SimpleClickSegmenter
 from .models import PipelineContext, PipelineResult
 from .outputs import OutputWriter
-from .runner import StageRunner
+from .runner import TaskGraphRunner
 from .stages import (
+    FurnitureStage,
     GeometryStage,
     MogeStage,
+    PointMapStage,
     PlacementStage,
     ReferenceStage,
     RenderStage,
     ResizeStage,
     SelectionStage,
+    SurfaceMaskStage,
     SurfaceStage,
     WallStage,
 )
@@ -29,7 +31,7 @@ __all__ = ["FurniturePipeline", "PipelineContext", "PipelineResult"]
 
 
 class FurniturePipeline:
-    """Build and execute the ordered pipeline stages."""
+    """Build and execute the pipeline task graph."""
 
     def __init__(self, settings: Settings | None = None) -> None:
         self.settings = settings or Settings()
@@ -47,13 +49,16 @@ class FurniturePipeline:
 
         return segment
 
-    def _stages(self):
+    def _tasks(self):
         return [
             ResizeStage(),
-            SelectionStage(self._segmenter_factory),
-            ReferenceStage(),
             MogeStage(),
             SurfaceStage(),
+            FurnitureStage(),
+            SelectionStage(self._segmenter_factory),
+            ReferenceStage(),
+            PointMapStage(),
+            SurfaceMaskStage(),
             GeometryStage(),
             WallStage(),
             PlacementStage(),
@@ -61,19 +66,28 @@ class FurniturePipeline:
         ]
 
     def run(self, image_path: str | Path, output_dir: str | Path | None = None) -> PipelineResult | None:
-        """Run all configured stages; returns ``None`` when the user aborts."""
+        """Run all configured tasks; returns ``None`` when the user aborts."""
 
         context = PipelineContext(Path(image_path), self.settings)
         latency = LatencyTracker()
-        if not StageRunner(self._stages()).run(context, latency):
+        if not TaskGraphRunner(self._tasks()).run(context, latency):
             return None
 
-        save_started = time.perf_counter()
-        out_dir = OutputWriter().save(context, output_dir)
-        latency.record("save_outputs", save_started)
+        save_started = latency.start_task(
+            "save_outputs",
+            ("render_furniture",),
+            execution="main",
+        )
+        try:
+            out_dir = OutputWriter().save(context, output_dir)
+        except Exception:
+            latency.finish_task("save_outputs", save_started, "failed")
+            raise
+        latency.finish_task("save_outputs", save_started, "completed")
         latency.record_total()
         context.latency_seconds = latency.values
-        OutputWriter.write_stats(out_dir, latency.values)
+        report = latency.report()
+        OutputWriter.write_stats(out_dir, report)
         print(f"[done] outputs written to {out_dir}")
-        print_latency_stats(latency.values)
+        print_latency_stats(latency.values, report["summary"])
         return PipelineResult.from_context(out_dir, context)

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import builtins
 import json
+import threading
 
 import cv2
 import numpy as np
@@ -22,9 +23,11 @@ from dreamroom.placement_geometry import PlacementOrientation, TargetBoxPlacemen
 from dreamroom.pipeline import FurniturePipeline
 from dreamroom.pipeline.models import PipelineContext
 from dreamroom.pipeline.outputs import OutputWriter
+from dreamroom.pipeline.runner import TaskGraphRunner
+from dreamroom.pipeline.stages.base import PipelineStage, StageStatus
 from dreamroom.pipeline.stages.placement import PlacementStage
 from dreamroom.pipeline.stages.walls import WallStage
-from dreamroom.pipeline.timing import print_latency_stats
+from dreamroom.pipeline.timing import LatencyTracker, print_latency_stats
 from dreamroom.sam3_client import SurfaceSegmentation
 from dreamroom.segmenter import sample_points
 from dreamroom.ui.reference import ReferenceLineApp, ReferenceScale, prompt_meters
@@ -243,24 +246,98 @@ def test_pipeline_save(tmp_path):
 
 def test_pipeline_latency_stats(tmp_path, capsys):
     stats = {
-        "step_0_resize": 0.1,
-        "step_1_segment": 1.2,
-        "step_2_reference": 0.3,
-        "step_3_moge": None,
-        "step_4_sam3_surfaces": None,
-        "step_5_fit_3d": None,
-        "step_6_fit_walls": None,
-        "step_7_target_box": None,
-        "step_8_render": None,
+        "resize": 0.1,
+        "moge_inference": None,
+        "sam3_surfaces": None,
+        "prepare_furniture": None,
+        "object_selection": 1.2,
+        "reference_scale": 0.3,
+        "prepare_point_map": None,
+        "prepare_surface_masks": None,
+        "fit_geometry": None,
+        "fit_walls": None,
+        "target_box": None,
+        "render_furniture": None,
         "save_outputs": 0.4,
         "total": 2.0,
     }
-    OutputWriter.write_stats(tmp_path, stats)
+    report = {
+        "latency_seconds": stats,
+        "tasks": {},
+        "summary": {
+            "wall_clock_seconds": 2.0,
+            "active_task_seconds": 2.0,
+            "critical_path_seconds": 2.0,
+            "concurrency_saved_seconds": 0.0,
+        },
+    }
+    OutputWriter.write_stats(tmp_path, report)
     saved = json.loads((tmp_path / "stats.json").read_text())
-    assert saved == {"latency_seconds": stats}
+    assert saved == report
 
-    print_latency_stats(stats)
-    assert "step_3_moge: skipped" in capsys.readouterr().out
+    print_latency_stats(stats, report["summary"])
+    output = capsys.readouterr().out
+    assert "moge_inference: skipped" in output
+    assert "[stats] concurrency:" in output
+
+
+def test_task_graph_runs_api_work_while_main_thread_handles_ui(tmp_path):
+    api_started = threading.Event()
+    release_api = threading.Event()
+    calls = []
+
+    class RootTask(PipelineStage):
+        name = "root"
+
+        def run(self, context):
+            calls.append("root")
+            return StageStatus.COMPLETED
+
+    class ApiTask(PipelineStage):
+        name = "api"
+        dependencies = ("root",)
+        background = True
+
+        def run(self, context):
+            api_started.set()
+            assert release_api.wait(1.0)
+            calls.append("api")
+            return StageStatus.COMPLETED
+
+    class UiTask(PipelineStage):
+        name = "ui"
+        dependencies = ("root",)
+
+        def run(self, context):
+            assert api_started.wait(1.0)
+            calls.append("ui")
+            release_api.set()
+            return StageStatus.COMPLETED
+
+    class JoinTask(PipelineStage):
+        name = "join"
+        dependencies = ("api", "ui")
+
+        def run(self, context):
+            calls.append("join")
+            return StageStatus.COMPLETED
+
+    context = PipelineContext(tmp_path / "unused.png", Settings())
+    latency = LatencyTracker()
+
+    completed = TaskGraphRunner(
+        [RootTask(), ApiTask(), UiTask(), JoinTask()],
+        max_workers=1,
+    ).run(context, latency)
+    latency.record_total()
+
+    assert completed
+    assert calls == ["root", "ui", "api", "join"]
+    assert latency.tasks["api"]["execution"] == "background"
+    assert latency.tasks["ui"]["execution"] == "main"
+    assert latency.tasks["api"]["started_at_seconds"] <= latency.tasks["ui"][
+        "ended_at_seconds"
+    ]
 
 
 @pytest.mark.parametrize("debug", [False, True])
@@ -358,16 +435,21 @@ def test_pipeline_run_writes_latency_stats(tmp_path, monkeypatch):
 
     assert result is not None
     stats = json.loads((result.output_dir / "stats.json").read_text())
-    assert stats["latency_seconds"]["step_0_resize"] >= 0
-    assert stats["latency_seconds"]["step_1_segment"] >= 0
-    assert stats["latency_seconds"]["step_2_reference"] >= 0
-    assert stats["latency_seconds"]["step_3_moge"] is None
-    assert stats["latency_seconds"]["step_4_sam3_surfaces"] is None
-    assert stats["latency_seconds"]["step_5_fit_3d"] is None
-    assert stats["latency_seconds"]["step_6_fit_walls"] is None
-    assert stats["latency_seconds"]["step_7_target_box"] is None
-    assert stats["latency_seconds"]["step_8_render"] is None
-    assert stats["latency_seconds"]["total"] >= stats["latency_seconds"]["step_0_resize"]
+    assert stats["latency_seconds"]["resize"] >= 0
+    assert stats["latency_seconds"]["object_selection"] >= 0
+    assert stats["latency_seconds"]["reference_scale"] >= 0
+    assert stats["latency_seconds"]["moge_inference"] is None
+    assert stats["latency_seconds"]["sam3_surfaces"] is None
+    assert stats["latency_seconds"]["prepare_furniture"] is None
+    assert stats["latency_seconds"]["prepare_point_map"] is None
+    assert stats["latency_seconds"]["prepare_surface_masks"] is None
+    assert stats["latency_seconds"]["fit_geometry"] is None
+    assert stats["latency_seconds"]["fit_walls"] is None
+    assert stats["latency_seconds"]["target_box"] is None
+    assert stats["latency_seconds"]["render_furniture"] is None
+    assert stats["latency_seconds"]["total"] >= stats["latency_seconds"]["resize"]
+    assert stats["tasks"]["moge_inference"]["status"] == "skipped"
+    assert stats["summary"]["wall_clock_seconds"] >= 0
     assert result.latency_seconds == stats["latency_seconds"]
 
 

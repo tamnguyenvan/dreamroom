@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Run the furniture replacement pipeline (steps 0-8) on one image.
+"""Run the concurrent furniture replacement pipeline on one image.
 
 Example:
     python scripts/run_pipeline.py --image path/to/room.jpg
@@ -56,32 +56,39 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="request and save MoGe mesh/debug assets (slower)",
     )
-    parser.add_argument("--new-width", type=float, default=None, help="target width in meters")
-    parser.add_argument("--new-depth", type=float, default=None, help="target depth in meters")
-    parser.add_argument("--new-height", type=float, default=None, help="target height in meters")
+    parser.add_argument(
+        "--new-dimensions",
+        type=float,
+        nargs=3,
+        metavar=("WIDTH", "DEPTH", "HEIGHT"),
+        default=None,
+        help="target width, depth, and height in meters",
+    )
     parser.add_argument(
         "--furniture",
         type=Path,
         default=None,
-        help="furniture reference image; requires all three --new-* dimensions",
+        help="furniture reference image; requires --new-dimensions",
     )
     parser.add_argument("--seedream-endpoint", default=None, help="Seedream API URL")
     parser.add_argument("--seedream-model", default=None, help="Seedream model ID")
     parser.add_argument(
         "--seedream-timeout", type=float, default=None, help="Seedream request timeout (s)"
     )
-    parser.add_argument("--skip-moge", action="store_true", help="run only steps 0-2")
+    parser.add_argument(
+        "--skip-moge",
+        action="store_true",
+        help="skip MoGe, SAM 3, geometry, placement, and rendering",
+    )
     args = parser.parse_args()
-    dimensions = (args.new_width, args.new_depth, args.new_height)
-    if any(value is not None for value in dimensions):
-        if not all(value is not None for value in dimensions):
-            parser.error("--new-width, --new-depth, and --new-height are required together")
+    dimensions = tuple(args.new_dimensions) if args.new_dimensions is not None else None
+    if dimensions is not None:
         if any(value <= 0 for value in dimensions):
             parser.error("target dimensions must be positive")
     if args.sam3_min_score is not None and not 0.0 <= args.sam3_min_score <= 1.0:
         parser.error("--sam3-min-score must be between 0 and 1")
-    if args.furniture is not None and not all(value is not None for value in dimensions):
-        parser.error("--furniture requires --new-width, --new-depth, and --new-height")
+    if args.furniture is not None and dimensions is None:
+        parser.error("--furniture requires --new-dimensions WIDTH DEPTH HEIGHT")
     return args
 
 
@@ -109,10 +116,10 @@ def main() -> None:
         overrides["sam3_timeout"] = args.sam3_timeout
     if args.sam3_min_score is not None:
         overrides["sam3_min_score"] = args.sam3_min_score
-    if args.new_width is not None:
-        overrides["target_width_m"] = args.new_width
-        overrides["target_depth_m"] = args.new_depth
-        overrides["target_height_m"] = args.new_height
+    if args.new_dimensions is not None:
+        overrides["target_width_m"] = args.new_dimensions[0]
+        overrides["target_depth_m"] = args.new_dimensions[1]
+        overrides["target_height_m"] = args.new_dimensions[2]
     if args.furniture is not None:
         overrides["furniture_path"] = args.furniture
     if args.seedream_endpoint is not None:

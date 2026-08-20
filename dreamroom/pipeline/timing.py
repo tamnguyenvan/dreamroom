@@ -1,8 +1,13 @@
-"""Latency tracking and reporting for pipeline stages."""
+"""Thread-safe task timing and concurrency reporting."""
 
 from __future__ import annotations
 
 import time
+from threading import Lock
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .stages.base import PipelineStage
 
 
 class LatencyTracker:
@@ -11,36 +16,129 @@ class LatencyTracker:
     def __init__(self) -> None:
         self.started = time.perf_counter()
         self.values: dict[str, float | None] = {}
+        self.tasks: dict[str, dict] = {}
+        self._lock = Lock()
+
+    def register(self, stages: list[PipelineStage]) -> None:
+        with self._lock:
+            for stage in stages:
+                self.values.setdefault(stage.name, None)
+                self.tasks.setdefault(
+                    stage.name,
+                    {
+                        "dependencies": list(stage.dependencies),
+                        "execution": "background" if stage.background else "main",
+                        "status": "pending",
+                        "started_at_seconds": None,
+                        "ended_at_seconds": None,
+                        "duration_seconds": None,
+                    },
+                )
+
+    def start_task(
+        self,
+        name: str,
+        dependencies: tuple[str, ...] = (),
+        execution: str = "main",
+    ) -> float:
+        started = time.perf_counter()
+        with self._lock:
+            self.values.setdefault(name, None)
+            self.tasks[name] = {
+                "dependencies": list(dependencies),
+                "execution": execution,
+                "status": "running",
+                "started_at_seconds": started - self.started,
+                "ended_at_seconds": None,
+                "duration_seconds": None,
+            }
+        return started
+
+    def finish_task(self, name: str, started: float, status: str) -> None:
+        ended = time.perf_counter()
+        duration = ended - started
+        with self._lock:
+            self.values[name] = None if status == "skipped" else duration
+            task = self.tasks[name]
+            task["status"] = status
+            task["ended_at_seconds"] = ended - self.started
+            task["duration_seconds"] = duration
 
     def record(self, name: str, started: float) -> None:
-        self.values[name] = time.perf_counter() - started
+        self.finish_task(name, started, "completed")
 
     def record_skipped(self, name: str) -> None:
-        self.values[name] = None
+        started = self.start_task(name)
+        self.finish_task(name, started, "skipped")
 
     def record_total(self) -> None:
-        self.values["total"] = time.perf_counter() - self.started
+        with self._lock:
+            self.values["total"] = time.perf_counter() - self.started
+
+    def report(self) -> dict:
+        with self._lock:
+            values = dict(self.values)
+            tasks = {name: dict(task) for name, task in self.tasks.items()}
+        total = float(values.get("total") or 0.0)
+        active = sum(
+            float(task["duration_seconds"] or 0.0)
+            for task in tasks.values()
+            if task["status"] == "completed"
+        )
+        critical = self._critical_path_seconds(tasks)
+        return {
+            "latency_seconds": values,
+            "tasks": tasks,
+            "summary": {
+                "wall_clock_seconds": total,
+                "active_task_seconds": active,
+                "critical_path_seconds": critical,
+                "concurrency_saved_seconds": max(0.0, active - total),
+            },
+        }
+
+    @staticmethod
+    def _critical_path_seconds(tasks: dict[str, dict]) -> float:
+        longest: dict[str, float] = {}
+        remaining = set(tasks)
+        while remaining:
+            progressed = False
+            for name in list(remaining):
+                dependencies = tasks[name]["dependencies"]
+                if not all(dependency in longest for dependency in dependencies):
+                    continue
+                duration = (
+                    float(tasks[name]["duration_seconds"] or 0.0)
+                    if tasks[name]["status"] == "completed"
+                    else 0.0
+                )
+                longest[name] = duration + max(
+                    (longest[dependency] for dependency in dependencies),
+                    default=0.0,
+                )
+                remaining.remove(name)
+                progressed = True
+            if not progressed:
+                return 0.0
+        return max(longest.values(), default=0.0)
 
 
-def print_latency_stats(latency_seconds: dict[str, float | None]) -> None:
+def print_latency_stats(
+    latency_seconds: dict[str, float | None],
+    summary: dict[str, float] | None = None,
+) -> None:
     """Print the stable, user-facing latency summary."""
 
     print("[stats] latency:")
-    for name in (
-        "step_0_resize",
-        "step_1_segment",
-        "step_2_reference",
-        "step_3_moge",
-        "step_4_sam3_surfaces",
-        "step_5_fit_3d",
-        "step_6_fit_walls",
-        "step_7_target_box",
-        "step_8_render",
-        "save_outputs",
-        "total",
-    ):
-        seconds = latency_seconds[name]
+    for name, seconds in latency_seconds.items():
         if seconds is None:
             print(f"  {name}: skipped")
         else:
             print(f"  {name}: {seconds:.3f}s")
+    if summary is not None:
+        print(
+            "[stats] concurrency: "
+            f"active {summary['active_task_seconds']:.3f}s, "
+            f"critical path {summary['critical_path_seconds']:.3f}s, "
+            f"saved {summary['concurrency_saved_seconds']:.3f}s"
+        )

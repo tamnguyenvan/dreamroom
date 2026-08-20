@@ -1,4 +1,4 @@
-"""Stage protocol primitives."""
+"""Task protocol primitives for the dependency-based pipeline."""
 
 from __future__ import annotations
 
@@ -14,9 +14,15 @@ class StageStatus(Enum):
 
 
 class PipelineStage:
-    """Small interface implemented by every ordered stage."""
+    """One dependency-graph task.
+
+    Background tasks must not open UI windows. Independent background tasks may
+    run concurrently and therefore must write disjoint context fields.
+    """
 
     name: str
+    dependencies: tuple[str, ...] = ()
+    background: bool = False
 
     def run(self, context: PipelineContext) -> StageStatus:
         raise NotImplementedError

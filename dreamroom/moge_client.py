@@ -1,4 +1,4 @@
-"""Step 3: client for the deployed MoGe-2 API (production Modal endpoint).
+"""Client for the deployed MoGe-2 API (production Modal endpoint).
 
 POSTs one image to ``/predict`` and parses the returned ZIP:
 

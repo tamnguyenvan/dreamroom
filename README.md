@@ -1,25 +1,45 @@
 # dreamroom
 
-Furniture replacement pipeline. Current scope: steps 0-8.
+Furniture replacement pipeline with dependency-based concurrent execution.
 
-- **Step 0** — resize the input so its longest side is 1280 px.
-- **Step 1** — select an object: draw polylines in an OpenCV window, segment
+- **Resize** — resize the input so its longest side is 1280 px.
+- **Object selection** — draw polylines in an OpenCV window, segment
   with a local [SimpleClick](https://github.com/uncbiag/SimpleClick) model
   (ViT-Huge, CoCo+LVIS checkpoint), confirm the mask.
-- **Step 2** — draw a reference line on an object of known length and enter
+- **Reference scale** — draw a reference line on an object of known length and enter
   its length in meters to get a px-per-meter scale.
-- **Step 3** — send the working image to the MoGe-2 API and receive a point
+- **MoGe inference** — send the working image to the MoGe-2 API and receive a point
   map and metadata, plus optional debug assets.
-- **Step 4** — upload the working image once to fal.ai and use SAM 3 text
+- **Surface segmentation** — upload the working image once to fal.ai and use SAM 3 text
   prompts to segment wall, floor, and rug pixels.
-- **Step 5** — map the SAM-selected floor+rug pixels into 3D, fit the floor,
+- **Geometry fitting** — map the SAM-selected floor+rug pixels into 3D, fit the floor,
   and generate a floor-aligned object box.
-- **Step 6** — map SAM-selected wall pixels into 3D and fit finite vertical,
+- **Wall fitting** — map SAM-selected wall pixels into 3D and fit finite vertical,
   floor-anchored wall planes.
-- **Step 7** — infer a geometry-only placement orientation from the old box
+- **Target box** — infer a geometry-only placement orientation from the old box
   and walls, then optionally construct a floor-contact replacement box.
-- **Step 8** — draw the target box on the room image, resize the furniture
+- **Render** — draw the target box on the room image, resize the furniture
   reference to max-side 512, and render the replacement with Seedream 5.0 Pro.
+
+After resize, MoGe inference, SAM 3 segmentation, and furniture preprocessing
+start concurrently while object selection and reference input remain on the
+main thread. Downstream tasks start as soon as their dependencies finish:
+
+```mermaid
+graph LR
+    resize --> object_selection --> reference_scale --> prepare_point_map
+    resize --> moge_inference --> prepare_point_map
+    resize --> sam3_surfaces --> prepare_surface_masks
+    moge_inference --> prepare_surface_masks
+    prepare_point_map --> fit_geometry
+    prepare_surface_masks --> fit_geometry
+    fit_geometry --> fit_walls --> target_box --> render_furniture
+    resize --> prepare_furniture --> render_furniture
+```
+
+API calls are launched before user confirmation to minimize critical-path
+latency. Aborting the UI requests best-effort cancellation, but an already
+running provider request may still complete and incur usage.
 
 ## Project layout
 
@@ -27,18 +47,18 @@ Furniture replacement pipeline. Current scope: steps 0-8.
 dreamroom/
 ├── dreamroom/              # the package
 │   ├── config.py           # Settings (paths, thresholds, sizes)
-│   ├── image_ops.py        # step 0: load / resize / save
+│   ├── image_ops.py        # image load / resize / save
 │   ├── segmenter.py        # local SimpleClick port (from simpleclick-modal)
-│   ├── sam3_client.py      # step 4: fal.ai upload + SAM 3 text segmentation
+│   ├── sam3_client.py      # fal.ai upload + SAM 3 text segmentation
 │   ├── surface_viz.py      # separate SAM surface-mask diagnostics
-│   ├── geometry3d.py       # step 5: floor plane and 3D box fitting
-│   ├── wall_geometry.py    # step 6: segmented wall-plane fitting
-│   ├── placement_geometry.py # step 7: placement orientation and target box
-│   ├── placement_viz.py    # separate step-7 debug image and GLB
-│   ├── render_viz.py       # step 8: red target-box input image
-│   ├── seedream_client.py  # step 8: BytePlus ModelArk render client
-│   ├── moge_client.py      # step 3: MoGe-2 API client and response parser
-│   ├── pipeline/            # ordered stages, context, timing, and outputs
+│   ├── geometry3d.py       # floor plane and 3D box fitting
+│   ├── wall_geometry.py    # segmented wall-plane fitting
+│   ├── placement_geometry.py # placement orientation and target box
+│   ├── placement_viz.py    # separate placement debug image and GLB
+│   ├── render_viz.py       # red target-box input image
+│   ├── seedream_client.py  # BytePlus ModelArk render client
+│   ├── moge_client.py      # MoGe-2 API client and response parser
+│   ├── pipeline/            # task graph, shared context, timing, and outputs
 │   │   ├── __init__.py      # FurniturePipeline facade
 │   │   ├── models.py        # shared pipeline context/result models
 │   │   ├── outputs.py       # output artifact persistence
@@ -46,8 +66,8 @@ dreamroom/
 │   ├── viz3d.py             # geometry overlays and calibrated GLB export
 │   └── ui/
 │       ├── window.py       # shared OpenCV window base class
-│       ├── strokes.py      # step 1: polylines -> segment -> confirm
-│       └── reference.py    # step 2: reference line -> length in meters
+│       ├── strokes.py      # polylines -> segment -> confirm
+│       └── reference.py    # reference line -> length in meters
 ├── scripts/
 │   ├── setup_simpleclick.sh      # clone repo + install deps + download weights
 │   ├── run_pipeline.py           # CLI entry point
@@ -84,7 +104,7 @@ To construct a replacement box, provide all three dimensions in meters:
 ```bash
 .venv/bin/python scripts/run_pipeline.py \
   --image path/to/room.jpg \
-  --new-width 1.8 --new-depth 0.9 --new-height 0.8 \
+  --new-dimensions 1.8 0.9 0.8 \
   --furniture path/to/new-furniture.jpg \
   --debug
 ```
@@ -92,13 +112,13 @@ To construct a replacement box, provide all three dimensions in meters:
 Options: `--output-dir`, `--max-side`, `--threshold`, `--max-display-width`,
 `--no-flip` (about 2x faster segmentation on CPU, slightly lower quality),
 `--moge-endpoint`, `--moge-timeout`, `--sam3-model`, `--sam3-timeout`,
-`--sam3-min-score`, `--new-width`, `--new-depth`, `--new-height`, `--debug`,
+`--sam3-min-score`, `--new-dimensions WIDTH DEPTH HEIGHT`, `--debug`,
 `--furniture`, `--seedream-endpoint`, `--seedream-model`,
 `--seedream-timeout`, and `--skip-moge` (run only steps 0-2). Seedream settings
 can also be overridden with `DREAMROOM_SEEDREAM_ENDPOINT` and
 `DREAMROOM_SEEDREAM_MODEL`.
 
-### Step 1 controls
+### Object selection controls
 
 | Input | Action |
 | --- | --- |
@@ -110,7 +130,7 @@ can also be overridden with `DREAMROOM_SEEDREAM_ENDPOINT` and
 | `n` / `r` | redraw the strokes in a new annotation view |
 | Esc / `q` | abort |
 
-### Step 2 controls
+### Reference controls
 
 | Input | Action |
 | --- | --- |
@@ -120,7 +140,7 @@ can also be overridden with `DREAMROOM_SEEDREAM_ENDPOINT` and
 | `u` / `c` | redraw the line |
 | Esc / `q` | abort |
 
-### Step 3: MoGe-2
+### MoGe-2
 
 The client sends a multipart `POST /predict` request. Production mode is the
 default and requests `include_mesh=false` and `include_debug=false` to reduce
@@ -135,7 +155,7 @@ before 3D fitting. Point-map coordinates follow the GLB camera convention:
 `+X` right, `+Y` up, and `-Z` forward; normalized intrinsics are stored in the
 returned metadata.
 
-### Step 4: SAM 3 room surfaces
+### SAM 3 room surfaces
 
 - The client uploads the resized working image once with
   `fal_client.upload_file(...)` and reuses the returned URL.
@@ -150,7 +170,7 @@ returned metadata.
 - In debug mode, the raw semantic evidence is written separately from the
   geometry overlays as `debug_surfaces_2d.png` and three combined mask images.
 
-### Step 5: segmented floor to 3D box
+### Segmented floor to 3D box
 
 - Reference-line endpoints are sampled in the point map and used to convert
   MoGe units to meters.
@@ -163,10 +183,10 @@ returned metadata.
 - Object points are transformed into the floor frame. A minimum-area 2D
   footprint and robust height percentile produce the oriented box.
 - In `--debug` mode, `debug_3d.glb` scales the original MoGe scene with the
-  Step 2 calibration factor before adding the fitted box and floor plane,
+  reference calibration factor before adding the fitted box and floor plane,
   keeping all displayed geometry in calibrated metric coordinates.
 
-### Step 6: segmented wall planes
+### Segmented wall planes
 
 - Wall candidates come only from SAM wall masks; the selected object and points
   too close to or too far above the floor are excluded.
@@ -181,7 +201,7 @@ returned metadata.
   whose lower edge is snapped to the floor. With `--debug`, those patches are
   drawn in `debug_2d.png` and inserted into `debug_3d.glb`.
 
-### Step 7: placement orientation and target box
+### Placement orientation and target box
 
 - The four vertical faces of the old box are scored against every finite wall
   using distance, plane parallelism, outward direction, and horizontal overlap.
@@ -197,11 +217,11 @@ returned metadata.
   Corner placement also preserves the old secondary-wall clearance.
 - Ambiguous placement keeps the old horizontal axes and footprint center, and
   marks the result as `center_fallback` instead of claiming a rear face.
-- Step-7 visuals use clean, separate `debug_placement_2d.png` and
+- Placement visuals use clean, separate `debug_placement_2d.png` and
   `debug_placement_3d.glb` files instead of adding more overlays to the existing
   geometry debug assets.
 
-### Step 8: Seedream render
+### Seedream render
 
 - `--furniture` requires all three replacement dimensions. The furniture image
   is loaded locally and resized to max-side 512 with aspect ratio preserved.
@@ -247,10 +267,12 @@ Each run writes `outputs/<image-name>-<timestamp>/`:
 - `debug_3d.glb` — calibrated MoGe scene with box, floor, and wall overlays (debug mode).
 - `debug_placement_2d.png` — clean face evidence and target-box overlay (debug mode).
 - `debug_placement_3d.glb` — clean placement-orientation scene (debug mode).
-- `stats.json` — per-step latency in seconds, output-save time, and total runtime.
+- `stats.json` — per-task durations, dependency/timeline metadata, critical-path
+  estimate, concurrency savings, output-save time, and total runtime.
 
-The CLI also prints the same latency summary after the output directory is
-written. Steps 3-8 are reported as `skipped` when `--skip-moge` is used.
+The CLI also prints the latency and concurrency summary after the output
+directory is written. MoGe-dependent tasks are reported as `skipped` when
+`--skip-moge` is used.
 
 ## Notes
 
@@ -266,7 +288,7 @@ written. Steps 3-8 are reported as `skipped` when `--skip-moge` is used.
 - Paths can be overridden with `DREAMROOM_SIMPLECLICK_ROOT` and
   `DREAMROOM_CHECKPOINT`.
 - MoGe can be skipped with `--skip-moge`, which is useful for validating the
-  interactive Steps 0-2 flow without the API.
+  interactive object-selection and reference flow without the APIs.
 
 ## Test
 
