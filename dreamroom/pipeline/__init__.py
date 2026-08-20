@@ -87,7 +87,8 @@ class FurniturePipeline:
         latency.record_total()
         context.latency_seconds = latency.values
         report = latency.report()
-        OutputWriter.write_stats(out_dir, report)
+        if context.settings.debug or context.rendered_image is None:
+            OutputWriter.write_stats(out_dir, report)
         print(f"[done] outputs written to {out_dir}")
         print_latency_stats(latency.values, report["summary"])
         return PipelineResult.from_context(out_dir, context)

@@ -550,6 +550,23 @@ def test_production_moge_outputs_only_save_2d_debug(tmp_path):
         assert not (tmp_path / name).exists(), name
 
 
+def test_production_render_saves_only_final_image(tmp_path):
+    context = PipelineContext(
+        image_path=tmp_path / "room.jpg",
+        settings=Settings(outputs_root=tmp_path, debug=False),
+        image_bgr=make_image(8, 8),
+        original_size=(8, 8),
+        selection=ObjectSelection(np.ones((8, 8), dtype=bool), [], []),
+        reference=ReferenceScale([1, 1], [5, 1], 4.0, 1.0),
+        rendered_image=b"final-render",
+    )
+
+    out_dir = OutputWriter().save(context)
+
+    assert [path.name for path in out_dir.iterdir()] == ["rendered_furniture.jpg"]
+    assert (out_dir / "rendered_furniture.jpg").read_bytes() == b"final-render"
+
+
 def test_target_box_and_separate_debug_outputs(tmp_path):
     box = Box3D(np.zeros(3), np.eye(3), np.ones(3))
     orientation = PlacementOrientation(

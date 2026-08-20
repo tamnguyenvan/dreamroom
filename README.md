@@ -259,16 +259,18 @@ Each run writes `outputs/<image-name>-<timestamp>/`:
 - `debug_surfaces_2d.png` — clean SAM surface-mask overlay (debug mode).
 - `placement.json` — placement mode, selected faces/walls, confidence, and per-face evidence.
 - `target_box3d.json` — replacement box and placement diagnostics when dimensions were supplied.
-- `render_room_target_box.png` — room input with the red target-box guide.
-- `render_furniture_reference.png` — resized furniture input (max-side 512).
-- `rendered_furniture.jpg` — downloaded Seedream output.
-- `render.json` — Seedream URL, timing, usage, prompt, and input metadata.
+- `render_room_target_box.png` — room input with the red target-box guide (debug).
+- `render_furniture_reference.png` — resized furniture input (max-side 512, debug).
+- `rendered_furniture.jpg` — downloaded Seedream output. In production rendering
+  mode (without `--debug`), this is the only file written to the output folder.
+- `render.json` — Seedream URL, timing, usage, prompt, and input metadata (debug).
 - `debug_2d.png` — fitted geometry reprojected onto the working image; wall overlays are debug-only.
 - `debug_3d.glb` — calibrated MoGe scene with box, floor, and wall overlays (debug mode).
 - `debug_placement_2d.png` — clean face evidence and target-box overlay (debug mode).
 - `debug_placement_3d.glb` — clean placement-orientation scene (debug mode).
 - `stats.json` — per-task durations, dependency/timeline metadata, critical-path
-  estimate, concurrency savings, output-save time, and total runtime.
+  estimate, concurrency savings, output-save time, and total runtime (debug or
+  non-rendering runs).
 
 The CLI also prints the latency and concurrency summary after the output
 directory is written. MoGe-dependent tasks are reported as `skipped` when

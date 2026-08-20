@@ -20,6 +20,10 @@ class OutputWriter:
         out_dir = self._resolve_output_dir(context, output_dir)
         out_dir.mkdir(parents=True, exist_ok=True)
 
+        if not context.settings.debug and context.rendered_image is not None:
+            (out_dir / "rendered_furniture.jpg").write_bytes(context.rendered_image)
+            return out_dir
+
         save_image(out_dir / "image.png", context.image_bgr)
         save_image(out_dir / "mask.png", mask_to_uint8(context.selection.mask))
         save_image(out_dir / "overlay.png", overlay_mask(context.image_bgr, context.selection.mask))
