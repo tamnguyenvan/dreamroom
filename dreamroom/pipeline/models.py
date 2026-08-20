@@ -11,6 +11,7 @@ from ..config import Settings
 from ..geometry3d import Box3D, FloorPlane
 from ..moge_client import MogeResult
 from ..placement_geometry import PlacementOrientation, TargetBoxPlacement
+from ..sam3_client import SurfaceSegmentation
 from ..ui.reference import ReferenceScale
 from ..ui.strokes import ObjectSelection
 from ..wall_geometry import WallPlane
@@ -32,6 +33,10 @@ class PipelineContext:
     mask_pm: np.ndarray | None = None
     scale_correction: float | None = None
     calibration: dict = field(default_factory=dict)
+    surface_segmentation: SurfaceSegmentation | None = None
+    floor_surface_mask_pm: np.ndarray | None = None
+    rug_surface_mask_pm: np.ndarray | None = None
+    wall_surface_masks_pm: list[np.ndarray] = field(default_factory=list)
     box: Box3D | None = None
     floor: FloorPlane | None = None
     walls: list[WallPlane] = field(default_factory=list)
@@ -39,6 +44,7 @@ class PipelineContext:
     target_placement: TargetBoxPlacement | None = None
     debug_2d: np.ndarray | None = None
     debug_3d: bytes | None = None
+    debug_surfaces_2d: np.ndarray | None = None
     debug_placement_2d: np.ndarray | None = None
     debug_placement_3d: bytes | None = None
     latency_seconds: dict[str, float | None] = field(default_factory=dict)
@@ -46,7 +52,7 @@ class PipelineContext:
 
 @dataclass
 class PipelineResult:
-    """Everything produced by steps 0-6 in a completed run."""
+    """Everything produced by steps 0-7 in a completed run."""
 
     output_dir: Path
     image_bgr: np.ndarray
@@ -54,6 +60,7 @@ class PipelineResult:
     reference: ReferenceScale
     resize_scale: float
     original_size: tuple[int, int]
+    surface_segmentation: SurfaceSegmentation | None = None
     box: Box3D | None = None
     floor: FloorPlane | None = None
     walls: list[WallPlane] = field(default_factory=list)
@@ -75,6 +82,7 @@ class PipelineResult:
             reference=context.reference,
             resize_scale=context.resize_scale,
             original_size=context.original_size,
+            surface_segmentation=context.surface_segmentation,
             box=context.box,
             floor=context.floor,
             walls=context.walls,

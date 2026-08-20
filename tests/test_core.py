@@ -25,6 +25,7 @@ from dreamroom.pipeline.outputs import OutputWriter
 from dreamroom.pipeline.stages.placement import PlacementStage
 from dreamroom.pipeline.stages.walls import WallStage
 from dreamroom.pipeline.timing import print_latency_stats
+from dreamroom.sam3_client import SurfaceSegmentation
 from dreamroom.segmenter import sample_points
 from dreamroom.ui.reference import ReferenceLineApp, ReferenceScale, prompt_meters
 from dreamroom.ui.strokes import ObjectSelection, SelectObjectApp, select_object
@@ -246,7 +247,10 @@ def test_pipeline_latency_stats(tmp_path, capsys):
         "step_1_segment": 1.2,
         "step_2_reference": 0.3,
         "step_3_moge": None,
-        "step_4_fit_3d": None,
+        "step_4_sam3_surfaces": None,
+        "step_5_fit_3d": None,
+        "step_6_fit_walls": None,
+        "step_7_target_box": None,
         "save_outputs": 0.4,
         "total": 2.0,
     }
@@ -300,10 +304,15 @@ def test_wall_stage_visualizes_walls_only_in_debug(tmp_path, monkeypatch, debug)
         scale_correction=1.0,
         floor=floor,
         box=box,
+        surface_segmentation=SurfaceSegmentation(
+            masks={"wall": [], "floor": [], "rug": []},
+            image_shape=(10, 10),
+            model="test",
+        ),
     )
     calls = {}
     monkeypatch.setattr(
-        "dreamroom.pipeline.stages.walls.fit_wall_planes",
+        "dreamroom.pipeline.stages.walls.fit_segmented_wall_planes",
         lambda *args: [wall],
     )
 
@@ -352,9 +361,10 @@ def test_pipeline_run_writes_latency_stats(tmp_path, monkeypatch):
     assert stats["latency_seconds"]["step_1_segment"] >= 0
     assert stats["latency_seconds"]["step_2_reference"] >= 0
     assert stats["latency_seconds"]["step_3_moge"] is None
-    assert stats["latency_seconds"]["step_4_fit_3d"] is None
-    assert stats["latency_seconds"]["step_5_fit_walls"] is None
-    assert stats["latency_seconds"]["step_6_target_box"] is None
+    assert stats["latency_seconds"]["step_4_sam3_surfaces"] is None
+    assert stats["latency_seconds"]["step_5_fit_3d"] is None
+    assert stats["latency_seconds"]["step_6_fit_walls"] is None
+    assert stats["latency_seconds"]["step_7_target_box"] is None
     assert stats["latency_seconds"]["total"] >= stats["latency_seconds"]["step_0_resize"]
     assert result.latency_seconds == stats["latency_seconds"]
 

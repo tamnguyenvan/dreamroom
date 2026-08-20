@@ -16,3 +16,4 @@ scikit-image>=0.21
 timm==0.6.11
 gdown>=5.2,<6
 trimesh>=4,<5
+fal-client>=1.0,<2

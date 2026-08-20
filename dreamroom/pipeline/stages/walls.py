@@ -1,19 +1,19 @@
-"""Step 5: global wall fitting and final geometry visualization."""
+"""Step 6: SAM-selected wall fitting and final geometry visualization."""
 
 from __future__ import annotations
 
 from ...viz3d import draw_debug_2d, export_debug_glb, intrinsics_px
-from ...wall_geometry import fit_wall_planes
+from ...wall_geometry import fit_segmented_wall_planes
 from ..models import PipelineContext
 from .base import PipelineStage, StageStatus
 
 
 class WallStage(PipelineStage):
-    name = "step_5_fit_walls"
+    name = "step_6_fit_walls"
 
     def run(self, context: PipelineContext) -> StageStatus:
         if not context.settings.moge_enabled:
-            print("[step 5] skipped (moge disabled)")
+            print("[step 6] skipped (moge disabled)")
             return StageStatus.SKIPPED
         if (
             context.image_bgr is None
@@ -24,16 +24,18 @@ class WallStage(PipelineStage):
             or context.scale_correction is None
             or context.floor is None
             or context.box is None
+            or context.surface_segmentation is None
         ):
-            raise RuntimeError("Steps 0-4 must run before wall fitting")
+            raise RuntimeError("Steps 0-5 must run before wall fitting")
 
-        print("[step 5] fitting global wall planes...")
-        context.walls = fit_wall_planes(
+        print("[step 6] fitting wall planes from SAM-selected pixels...")
+        context.walls = fit_segmented_wall_planes(
             context.point_map,
+            context.wall_surface_masks_pm,
             context.mask_pm,
             context.floor,
         )
-        print(f"[step 5] detected {len(context.walls)} wall plane(s)")
+        print(f"[step 6] detected {len(context.walls)} wall plane(s)")
         for index, wall in enumerate(context.walls, start=1):
             print(
                 f"  wall {index}: {wall.width:.2f}m x {wall.height:.2f}m, "

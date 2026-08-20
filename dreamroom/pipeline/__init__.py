@@ -19,6 +19,7 @@ from .stages import (
     ReferenceStage,
     ResizeStage,
     SelectionStage,
+    SurfaceStage,
     WallStage,
 )
 from .timing import LatencyTracker, print_latency_stats
@@ -51,6 +52,7 @@ class FurniturePipeline:
             SelectionStage(self._segmenter_factory),
             ReferenceStage(),
             MogeStage(),
+            SurfaceStage(),
             GeometryStage(),
             WallStage(),
             PlacementStage(),

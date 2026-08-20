@@ -94,6 +94,27 @@ class OutputWriter:
                 indent=2,
             )
         )
+        if context.surface_segmentation is not None:
+            (out_dir / "surfaces.json").write_text(
+                json.dumps(context.surface_segmentation.to_dict(), indent=2)
+            )
+            if context.settings.debug:
+                save_image(
+                    out_dir / "sam3_floor_mask.png",
+                    mask_to_uint8(
+                        context.surface_segmentation.combined_mask("floor")
+                    ),
+                )
+                save_image(
+                    out_dir / "sam3_rug_mask.png",
+                    mask_to_uint8(context.surface_segmentation.combined_mask("rug")),
+                )
+                save_image(
+                    out_dir / "sam3_wall_mask.png",
+                    mask_to_uint8(context.surface_segmentation.combined_mask("wall")),
+                )
+        if context.debug_surfaces_2d is not None:
+            save_image(out_dir / "debug_surfaces_2d.png", context.debug_surfaces_2d)
         if context.debug_2d is not None:
             save_image(out_dir / "debug_2d.png", context.debug_2d)
         if context.debug_3d is not None:

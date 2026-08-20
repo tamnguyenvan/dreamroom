@@ -1,4 +1,4 @@
-"""Debug visualization for step 4: 2D reprojection overlay and 3D GLB export.
+"""Debug visualization for fitted floor, box, and wall geometry.
 
 Projection uses the MoGe normalized intrinsics at the point-map resolution;
 pixels are then scaled up to the working-image resolution (which is larger,

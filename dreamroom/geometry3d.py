@@ -1,4 +1,4 @@
-"""Step 4: map the 2D mask into MoGe 3D space and fit a floor-aligned 3D box.
+"""Step 5: map 2D masks into MoGe space and fit a floor-aligned 3D box.
 
 All 3D coordinates live in the MoGe glb camera frame: +X right, +Y up,
 -Z forward, in meters (after the step-2 reference scale correction).
@@ -170,6 +170,23 @@ def floor_candidate_points(
     rows[int(height * (1.0 - bottom_fraction)):] = True
     candidates = rows[:, None] & ~mask_pm & np.isfinite(point_map).all(axis=2)
     return point_map[candidates]
+
+
+def segmented_surface_points(
+    point_map: np.ndarray,
+    surface_mask: np.ndarray,
+    exclude_mask: np.ndarray | None = None,
+) -> np.ndarray:
+    """Valid point-map samples selected by a semantic surface mask."""
+
+    if point_map.shape[:2] != surface_mask.shape:
+        raise ValueError("point map and surface mask resolutions must match")
+    keep = surface_mask.astype(bool) & np.isfinite(point_map).all(axis=2)
+    if exclude_mask is not None:
+        if exclude_mask.shape != surface_mask.shape:
+            raise ValueError("surface and exclusion mask resolutions must match")
+        keep &= ~exclude_mask.astype(bool)
+    return point_map[keep]
 
 
 def fit_floor_plane(

@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Run the furniture replacement pipeline (steps 0-6) on one image.
+"""Run the furniture replacement pipeline (steps 0-7) on one image.
 
 Example:
     python scripts/run_pipeline.py --image path/to/room.jpg
@@ -38,6 +38,20 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--moge-timeout", type=float, default=None, help="MoGe-2 request timeout (s)")
     parser.add_argument(
+        "--sam3-model",
+        default=None,
+        help="fal.ai SAM 3 model ID (default: fal-ai/sam-3/image)",
+    )
+    parser.add_argument(
+        "--sam3-timeout", type=float, default=None, help="SAM 3 request timeout (s)"
+    )
+    parser.add_argument(
+        "--sam3-min-score",
+        type=float,
+        default=None,
+        help="minimum SAM 3 mask confidence (default 0.25)",
+    )
+    parser.add_argument(
         "--debug",
         action="store_true",
         help="request and save MoGe mesh/debug assets (slower)",
@@ -53,6 +67,8 @@ def parse_args() -> argparse.Namespace:
             parser.error("--new-width, --new-depth, and --new-height are required together")
         if any(value <= 0 for value in dimensions):
             parser.error("target dimensions must be positive")
+    if args.sam3_min_score is not None and not 0.0 <= args.sam3_min_score <= 1.0:
+        parser.error("--sam3-min-score must be between 0 and 1")
     return args
 
 
@@ -74,6 +90,12 @@ def main() -> None:
         overrides["moge_endpoint"] = args.moge_endpoint
     if args.moge_timeout is not None:
         overrides["moge_timeout"] = args.moge_timeout
+    if args.sam3_model is not None:
+        overrides["sam3_model"] = args.sam3_model
+    if args.sam3_timeout is not None:
+        overrides["sam3_timeout"] = args.sam3_timeout
+    if args.sam3_min_score is not None:
+        overrides["sam3_min_score"] = args.sam3_min_score
     if args.new_width is not None:
         overrides["target_width_m"] = args.new_width
         overrides["target_depth_m"] = args.new_depth

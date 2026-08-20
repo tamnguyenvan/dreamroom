@@ -197,6 +197,58 @@ def _wall_candidates(
     )
 
 
+def _segmented_wall_candidates(
+    point_map: np.ndarray,
+    wall_mask: np.ndarray,
+    object_mask: np.ndarray,
+    floor: FloorPlane,
+    *,
+    mask_dilation_px: int,
+    min_height: float,
+    max_height: float,
+    sample_stride: int,
+    max_candidates: int,
+) -> _WallCandidates | None:
+    """Project SAM-selected wall points into the fitted floor frame."""
+
+    finite = np.isfinite(point_map).all(axis=2)
+    heights = np.full(point_map.shape[:2], np.nan, dtype=np.float64)
+    heights[finite] = floor.signed_distance(point_map[finite])
+    kernel_size = 2 * mask_dilation_px + 1
+    kernel = np.ones((kernel_size, kernel_size), dtype=np.uint8)
+    excluded_object = cv2.dilate(object_mask.astype(np.uint8), kernel) > 0
+    keep = (
+        wall_mask.astype(bool)
+        & finite
+        & ~excluded_object
+        & (heights >= min_height)
+        & (heights <= max_height)
+    )
+    grid = np.zeros_like(keep)
+    grid[::sample_stride, ::sample_stride] = True
+    keep &= grid
+    rows, cols = np.nonzero(keep)
+    if len(rows) < MIN_WALL_CANDIDATES:
+        return None
+    if len(rows) > max_candidates:
+        selected = np.linspace(0, len(rows) - 1, max_candidates, dtype=np.int64)
+        rows, cols = rows[selected], cols[selected]
+
+    points = point_map[rows, cols].astype(np.float64)
+    axis_u, axis_v = floor_basis(floor)
+    relative = points - floor.point
+    floor_uv = np.column_stack((relative @ axis_u, relative @ axis_v))
+    return _WallCandidates(
+        points=points,
+        floor_uv=floor_uv,
+        heights=relative @ floor.normal,
+        normal_uv=np.zeros((len(points), 2), dtype=np.float64),
+        pixels=np.column_stack((cols, rows)),
+        floor_axis_u=axis_u,
+        floor_axis_v=axis_v,
+    )
+
+
 def _line_inliers(
     candidates: _WallCandidates,
     normal: np.ndarray,
@@ -239,6 +291,66 @@ def _ransac_line(
     if best_inliers is None or best_normal is None:
         return None
     return best_normal, best_offset, best_inliers
+
+
+def _ransac_segment_line(
+    candidates: _WallCandidates,
+    iterations: int,
+    threshold: float,
+    min_pair_distance: float,
+    rng: np.random.Generator,
+) -> tuple[np.ndarray, float, np.ndarray] | None:
+    """RANSAC a floor-frame line without requiring estimated point normals."""
+
+    best_inliers: np.ndarray | None = None
+    best_normal: np.ndarray | None = None
+    best_offset = 0.0
+    for _ in range(iterations):
+        first, second = rng.choice(len(candidates), size=2, replace=False)
+        tangent = candidates.floor_uv[second] - candidates.floor_uv[first]
+        length = np.linalg.norm(tangent)
+        if length < min_pair_distance:
+            continue
+        tangent /= length
+        normal = np.array([-tangent[1], tangent[0]])
+        offset = -float(normal @ candidates.floor_uv[first])
+        inliers = np.abs(candidates.floor_uv @ normal + offset) <= threshold
+        if best_inliers is None or inliers.sum() > best_inliers.sum():
+            best_inliers = inliers
+            best_normal = normal
+            best_offset = offset
+    if best_inliers is None or best_normal is None:
+        return None
+    return best_normal, best_offset, best_inliers
+
+
+def _refine_segment_line(
+    candidates: _WallCandidates,
+    initial_inliers: np.ndarray,
+    initial_normal: np.ndarray,
+    threshold: float,
+) -> tuple[np.ndarray, float, np.ndarray]:
+    inliers = initial_inliers
+    normal = initial_normal
+    offset = 0.0
+    for _ in range(3):
+        points = candidates.floor_uv[inliers]
+        if len(points) < 2:
+            break
+        centroid = points.mean(axis=0)
+        _, _, vh = np.linalg.svd(points - centroid, full_matrices=False)
+        refined = vh[-1]
+        if refined @ normal < 0:
+            refined = -refined
+        normal = refined / np.linalg.norm(refined)
+        offset = -float(normal @ centroid)
+        refined_inliers = (
+            np.abs(candidates.floor_uv @ normal + offset) <= threshold
+        )
+        if refined_inliers.sum() < 2:
+            break
+        inliers = refined_inliers
+    return normal, offset, inliers
 
 
 def _refine_line(
@@ -559,4 +671,131 @@ def fit_wall_planes(
         weak_parallel_support_ratio=weak_parallel_support_ratio,
     )
     logger.info("fitted %d wall plane(s) from %d candidates", len(walls), len(candidates))
+    return walls
+
+
+def fit_segmented_wall_planes(
+    point_map: np.ndarray,
+    wall_masks: list[np.ndarray],
+    object_mask: np.ndarray,
+    floor: FloorPlane,
+    *,
+    max_walls: int = 6,
+    max_planes_per_mask: int = 2,
+    iterations: int = 500,
+    distance_threshold: float = 0.05,
+    min_inliers: int = 80,
+    min_inlier_ratio: float = 0.08,
+    min_width: float = 0.75,
+    min_height_span: float = 0.60,
+    min_connected_support_ratio: float = 0.25,
+    min_image_fill_ratio: float = 0.08,
+    min_height: float = 0.05,
+    max_height: float = 4.5,
+    mask_dilation_px: int = 3,
+    sample_stride: int = 2,
+    max_candidates_per_mask: int = 20_000,
+    image_cell_size: int = 16,
+    min_confidence: float = 0.35,
+    min_relative_height: float = 0.6,
+    seed: int = 0,
+) -> list[WallPlane]:
+    """Fit vertical planes only from SAM-selected wall pixels."""
+
+    if point_map.shape[:2] != object_mask.shape:
+        raise ValueError("point map and object mask resolutions must match")
+    if any(mask.shape != object_mask.shape for mask in wall_masks):
+        raise ValueError("point map and wall mask resolutions must match")
+
+    rng = np.random.default_rng(seed)
+    walls: list[WallPlane] = []
+    for wall_mask in wall_masks:
+        candidates = _segmented_wall_candidates(
+            point_map,
+            wall_mask,
+            object_mask,
+            floor,
+            mask_dilation_px=mask_dilation_px,
+            min_height=min_height,
+            max_height=max_height,
+            sample_stride=sample_stride,
+            max_candidates=max_candidates_per_mask,
+        )
+        if candidates is None:
+            continue
+        required_inliers = max(
+            min_inliers,
+            int(np.ceil(min_inlier_ratio * len(candidates))),
+        )
+        remaining = np.ones(len(candidates), dtype=bool)
+        for _ in range(max_planes_per_mask):
+            remaining_indices = np.flatnonzero(remaining)
+            if len(remaining_indices) < max(required_inliers, MIN_WALL_CANDIDATES):
+                break
+            active = candidates.subset(remaining_indices)
+            fit = _ransac_segment_line(
+                active,
+                iterations,
+                distance_threshold,
+                min_pair_distance=0.25,
+                rng=rng,
+            )
+            if fit is None:
+                break
+            normal, _, initial_inliers = fit
+            if initial_inliers.sum() < required_inliers:
+                break
+            normal, offset, inliers = _refine_segment_line(
+                active,
+                initial_inliers,
+                normal,
+                distance_threshold,
+            )
+            if inliers.sum() < required_inliers:
+                break
+            remaining[remaining_indices[inliers]] = False
+            wall = _make_wall(
+                active,
+                floor,
+                normal,
+                offset,
+                inliers,
+                distance_threshold,
+                len(candidates),
+                image_cell_size,
+            )
+            wall_heights = active.heights[inliers]
+            height_span = float(
+                np.percentile(wall_heights, 95.0)
+                - np.percentile(wall_heights, 5.0)
+            )
+            if (
+                wall.width < min_width
+                or height_span < min_height_span
+                or wall.connected_support_ratio < min_connected_support_ratio
+                or wall.image_fill_ratio < min_image_fill_ratio
+            ):
+                continue
+            duplicate_index = next(
+                (index for index, item in enumerate(walls) if _is_duplicate(item, wall)),
+                None,
+            )
+            if duplicate_index is not None:
+                if wall.inlier_count > walls[duplicate_index].inlier_count:
+                    walls[duplicate_index] = wall
+                continue
+            walls.append(wall)
+            if len(walls) >= max_walls:
+                break
+        if len(walls) >= max_walls:
+            break
+
+    walls = filter_wall_planes(
+        walls,
+        min_confidence=min_confidence,
+        min_relative_height=min_relative_height,
+    )
+    logger.info(
+        "fitted %d wall plane(s) from %d SAM mask(s)", len(walls), len(wall_masks)
+    )
     return walls

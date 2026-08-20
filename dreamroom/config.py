@@ -4,6 +4,9 @@ Environment variables are read once at import time:
 
 - ``DREAMROOM_SIMPLECLICK_ROOT``: path of the local SimpleClick clone.
 - ``DREAMROOM_CHECKPOINT``: path of the SimpleClick checkpoint file.
+- ``DREAMROOM_MOGE_ENDPOINT``: optional MoGe-2 endpoint override.
+- ``DREAMROOM_SAM3_MODEL``: optional fal.ai SAM 3 model ID override.
+- ``FAL_KEY``: fal.ai API credential consumed by ``fal-client``.
 """
 
 from __future__ import annotations
@@ -47,7 +50,12 @@ class Settings:
     moge_endpoint: str | None = os.getenv("DREAMROOM_MOGE_ENDPOINT") or None
     moge_timeout: float = 300.0
 
-    # Step 6: optional replacement dimensions in meters
+    # Step 4: fal.ai SAM 3 room-surface segmentation
+    sam3_model: str = os.getenv("DREAMROOM_SAM3_MODEL", "fal-ai/sam-3/image")
+    sam3_timeout: float = 300.0
+    sam3_min_score: float = 0.25
+
+    # Step 7: optional replacement dimensions in meters
     target_width_m: float | None = None
     target_depth_m: float | None = None
     target_height_m: float | None = None

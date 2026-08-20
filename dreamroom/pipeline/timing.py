@@ -31,7 +31,10 @@ def print_latency_stats(latency_seconds: dict[str, float | None]) -> None:
         "step_1_segment",
         "step_2_reference",
         "step_3_moge",
-        "step_4_fit_3d",
+        "step_4_sam3_surfaces",
+        "step_5_fit_3d",
+        "step_6_fit_walls",
+        "step_7_target_box",
         "save_outputs",
         "total",
     ):

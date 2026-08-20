@@ -1,4 +1,4 @@
-"""Tests for step 4 geometry and the MoGe client ZIP parsing.
+"""Tests for 3D geometry and the MoGe client ZIP parsing.
 
 A synthetic room (floor, back wall, 1x1x1 m box on the floor) is rendered
 into a point map with a pinhole camera in the MoGe convention
@@ -25,10 +25,16 @@ from dreamroom.geometry3d import (
     fit_floor_plane,
     floor_candidate_points,
     resize_mask,
+    segmented_surface_points,
 )
 from dreamroom.moge_client import DEFAULT_ENDPOINT, MogeClient
 from dreamroom.viz3d import export_debug_glb, intrinsics_px, project_points
-from dreamroom.wall_geometry import WallPlane, filter_wall_planes, fit_wall_planes
+from dreamroom.wall_geometry import (
+    WallPlane,
+    filter_wall_planes,
+    fit_segmented_wall_planes,
+    fit_wall_planes,
+)
 
 WIDTH, HEIGHT = 800, 600
 FX = FY = 600.0
@@ -187,6 +193,30 @@ def test_global_wall_fit_clean():
         np.zeros(2), abs=1e-6
     )
     assert back_wall.to_dict()["confidence"] > 0.0
+
+
+def test_sam_selected_floor_and_wall_fit_clean():
+    point_map, object_mask, _ = synthetic_room()
+    finite = np.isfinite(point_map).all(axis=2)
+    floor_mask = finite & ~object_mask & np.isclose(point_map[:, :, 1], FLOOR_Y)
+    wall_mask = finite & ~object_mask & np.isclose(point_map[:, :, 2], WALL_Z)
+
+    floor_points = segmented_surface_points(point_map, floor_mask, object_mask)
+    floor = fit_floor_plane(floor_points, seed=0)
+    assert floor is not None
+    assert floor.point[1] == pytest.approx(FLOOR_Y, abs=1e-3)
+
+    walls = fit_segmented_wall_planes(
+        point_map,
+        [wall_mask],
+        object_mask,
+        floor,
+        iterations=300,
+        seed=0,
+    )
+    assert len(walls) == 1
+    assert walls[0].point[2] == pytest.approx(WALL_Z, abs=0.05)
+    assert abs(walls[0].normal[2]) > 0.99
 
 
 def test_wall_post_filter_rejects_parallel_shadow_and_partial_plane():
