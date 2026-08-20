@@ -1,0 +1,8 @@
+.venv/
+third_party/
+weights/
+outputs/
+__pycache__/
+.pytest_cache/
+*.pyc
+*.log

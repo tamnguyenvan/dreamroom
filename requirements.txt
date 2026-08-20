@@ -1,0 +1,17 @@
+# dreamroom pipeline + local SimpleClick (mirrors the .venv pins)
+torch==2.2.2
+torchvision==0.17.2
+numpy==1.23.5
+opencv-python>=4.10,<5
+Pillow>=9.5,<12
+PyYAML>=6,<7
+protobuf==3.20.3
+tensorboard==2.8.0
+albumentations==0.5.2
+Cython==0.29.32
+easydict>=1.9,<2
+mmcv==1.6.2
+scipy>=1.10,<2
+scikit-image>=0.21
+timm==0.6.11
+gdown>=5.2,<6
