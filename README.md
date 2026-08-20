@@ -1,6 +1,6 @@
 # dreamroom
 
-Furniture replacement pipeline. Current scope: steps 0-5.
+Furniture replacement pipeline. Current scope: steps 0-6.
 
 - **Step 0** — resize the input so its longest side is 1280 px.
 - **Step 1** — select an object: draw polylines in an OpenCV window, segment
@@ -15,6 +15,8 @@ Furniture replacement pipeline. Current scope: steps 0-5.
   3D bounding box with 2D/3D debug visualizations.
 - **Step 5** — use the fitted floor as a hard constraint to detect global
   vertical wall planes and recover finite, floor-anchored wall patches.
+- **Step 6** — infer a geometry-only placement orientation from the old box
+  and walls, then optionally construct a floor-contact replacement box.
 
 ## Project layout
 
@@ -26,6 +28,8 @@ dreamroom/
 │   ├── segmenter.py        # local SimpleClick port (from simpleclick-modal)
 │   ├── geometry3d.py       # step 4: floor plane and 3D box fitting
 │   ├── wall_geometry.py    # step 5: global floor-constrained wall fitting
+│   ├── placement_geometry.py # step 6: placement orientation and target box
+│   ├── placement_viz.py    # separate step-6 debug image and GLB
 │   ├── moge_client.py      # step 3: MoGe-2 API client and response parser
 │   ├── pipeline/            # ordered stages, context, timing, and outputs
 │   │   ├── __init__.py      # FurniturePipeline facade
@@ -66,10 +70,19 @@ The checkpoint download can also be run directly:
 .venv/bin/python scripts/run_pipeline.py --image path/to/room.jpg
 ```
 
+To construct a replacement box, provide all three dimensions in meters:
+
+```bash
+.venv/bin/python scripts/run_pipeline.py \
+  --image path/to/room.jpg \
+  --new-width 1.8 --new-depth 0.9 --new-height 0.8 \
+  --debug
+```
+
 Options: `--output-dir`, `--max-side`, `--threshold`, `--max-display-width`,
 `--no-flip` (about 2x faster segmentation on CPU, slightly lower quality),
-`--moge-endpoint`, `--moge-timeout`, `--debug`, and `--skip-moge` (run only
-steps 0-2).
+`--moge-endpoint`, `--moge-timeout`, `--new-width`, `--new-depth`,
+`--new-height`, `--debug`, and `--skip-moge` (run only steps 0-2).
 
 ### Step 1 controls
 
@@ -139,6 +152,26 @@ returned metadata.
   whose lower edge is snapped to the floor. With `--debug`, those patches are
   drawn in `debug_2d.png` and inserted into `debug_3d.glb`.
 
+### Step 6: placement orientation and target box
+
+- The four vertical faces of the old box are scored against every finite wall
+  using distance, plane parallelism, outward direction, and horizontal overlap.
+- The result is classified as `wall_backed`, `corner_backed`,
+  `angled_wall_backed`, `free_standing`, or `ambiguous`. Corner placement keeps
+  a secondary face/wall constraint rather than inventing one semantic rear.
+- When wall evidence is weak, visible object-point support provides a cautious
+  free-standing fallback. Ambiguous evidence remains explicitly unresolved.
+- If replacement dimensions are supplied, the old rear-face bottom midpoint is
+  used as the anchor. Alignment under 10 degrees snaps the target rear face
+  parallel to its wall; larger tilts preserve the old orientation.
+- The target base is constructed at zero signed distance from the fitted floor.
+  Corner placement also preserves the old secondary-wall clearance.
+- Ambiguous placement keeps the old horizontal axes and footprint center, and
+  marks the result as `center_fallback` instead of claiming a rear face.
+- Step-6 visuals use clean, separate `debug_placement_2d.png` and
+  `debug_placement_3d.glb` files instead of adding more overlays to the existing
+  geometry debug assets.
+
 ## Outputs
 
 Each run writes `outputs/<image-name>-<timestamp>/`:
@@ -155,12 +188,16 @@ Each run writes `outputs/<image-name>-<timestamp>/`:
 - `depth.png` / `normal.png` — MoGe debug previews (debug mode).
 - `box3d.json` — calibrated box center, axes, extents, corners, floor plane, and scale correction.
 - `walls3d.json` — detected wall planes, finite corners, support, residual, and confidence.
+- `placement.json` — placement mode, selected faces/walls, confidence, and per-face evidence.
+- `target_box3d.json` — replacement box and placement diagnostics when dimensions were supplied.
 - `debug_2d.png` — fitted geometry reprojected onto the working image; wall overlays are debug-only.
 - `debug_3d.glb` — calibrated MoGe scene with box, floor, and wall overlays (debug mode).
+- `debug_placement_2d.png` — clean face evidence and target-box overlay (debug mode).
+- `debug_placement_3d.glb` — clean placement-orientation scene (debug mode).
 - `stats.json` — per-step latency in seconds, output-save time, and total runtime.
 
 The CLI also prints the same latency summary after the output directory is
-written. Steps 3-5 are reported as `skipped` when `--skip-moge` is used.
+written. Steps 3-6 are reported as `skipped` when `--skip-moge` is used.
 
 ## Notes
 

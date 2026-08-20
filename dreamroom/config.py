@@ -47,6 +47,11 @@ class Settings:
     moge_endpoint: str | None = os.getenv("DREAMROOM_MOGE_ENDPOINT") or None
     moge_timeout: float = 300.0
 
+    # Step 6: optional replacement dimensions in meters
+    target_width_m: float | None = None
+    target_depth_m: float | None = None
+    target_height_m: float | None = None
+
     # UI
     max_display_width: int = 1200
 

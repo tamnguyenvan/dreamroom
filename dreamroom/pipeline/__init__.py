@@ -15,6 +15,7 @@ from .runner import StageRunner
 from .stages import (
     GeometryStage,
     MogeStage,
+    PlacementStage,
     ReferenceStage,
     ResizeStage,
     SelectionStage,
@@ -52,6 +53,7 @@ class FurniturePipeline:
             MogeStage(),
             GeometryStage(),
             WallStage(),
+            PlacementStage(),
         ]
 
     def run(self, image_path: str | Path, output_dir: str | Path | None = None) -> PipelineResult | None:

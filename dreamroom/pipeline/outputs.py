@@ -98,6 +98,23 @@ class OutputWriter:
             save_image(out_dir / "debug_2d.png", context.debug_2d)
         if context.debug_3d is not None:
             (out_dir / "debug_3d.glb").write_bytes(context.debug_3d)
+        if context.placement_orientation is not None:
+            (out_dir / "placement.json").write_text(
+                json.dumps(context.placement_orientation.to_dict(), indent=2)
+            )
+        if context.target_placement is not None:
+            (out_dir / "target_box3d.json").write_text(
+                json.dumps(context.target_placement.to_dict(), indent=2)
+            )
+        if context.debug_placement_2d is not None:
+            save_image(
+                out_dir / "debug_placement_2d.png",
+                context.debug_placement_2d,
+            )
+        if context.debug_placement_3d is not None:
+            (out_dir / "debug_placement_3d.glb").write_bytes(
+                context.debug_placement_3d
+            )
 
     @staticmethod
     def write_stats(out_dir: Path, latency_seconds: dict[str, float | None]) -> None:

@@ -10,6 +10,7 @@ import numpy as np
 from ..config import Settings
 from ..geometry3d import Box3D, FloorPlane
 from ..moge_client import MogeResult
+from ..placement_geometry import PlacementOrientation, TargetBoxPlacement
 from ..ui.reference import ReferenceScale
 from ..ui.strokes import ObjectSelection
 from ..wall_geometry import WallPlane
@@ -34,14 +35,18 @@ class PipelineContext:
     box: Box3D | None = None
     floor: FloorPlane | None = None
     walls: list[WallPlane] = field(default_factory=list)
+    placement_orientation: PlacementOrientation | None = None
+    target_placement: TargetBoxPlacement | None = None
     debug_2d: np.ndarray | None = None
     debug_3d: bytes | None = None
+    debug_placement_2d: np.ndarray | None = None
+    debug_placement_3d: bytes | None = None
     latency_seconds: dict[str, float | None] = field(default_factory=dict)
 
 
 @dataclass
 class PipelineResult:
-    """Everything produced by steps 0-5 in a completed run."""
+    """Everything produced by steps 0-6 in a completed run."""
 
     output_dir: Path
     image_bgr: np.ndarray
@@ -52,6 +57,8 @@ class PipelineResult:
     box: Box3D | None = None
     floor: FloorPlane | None = None
     walls: list[WallPlane] = field(default_factory=list)
+    placement_orientation: PlacementOrientation | None = None
+    target_placement: TargetBoxPlacement | None = None
     scale_correction: float | None = None
     latency_seconds: dict[str, float | None] = field(default_factory=dict)
 
@@ -71,6 +78,8 @@ class PipelineResult:
             box=context.box,
             floor=context.floor,
             walls=context.walls,
+            placement_orientation=context.placement_orientation,
+            target_placement=context.target_placement,
             scale_correction=context.scale_correction,
             latency_seconds=context.latency_seconds,
         )

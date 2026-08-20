@@ -1,0 +1,98 @@
+"""Step 6: heuristic placement orientation and target-box construction."""
+
+from __future__ import annotations
+
+from ...placement_geometry import build_target_box, infer_placement_orientation
+from ...placement_viz import (
+    draw_placement_debug_2d,
+    export_placement_debug_glb,
+)
+from ...viz3d import intrinsics_px
+from ..models import PipelineContext
+from .base import PipelineStage, StageStatus
+
+
+class PlacementStage(PipelineStage):
+    name = "step_6_target_box"
+
+    def run(self, context: PipelineContext) -> StageStatus:
+        if not context.settings.moge_enabled:
+            print("[step 6] skipped (moge disabled)")
+            return StageStatus.SKIPPED
+        if (
+            context.image_bgr is None
+            or context.selection is None
+            or context.moge is None
+            or context.point_map is None
+            or context.mask_pm is None
+            or context.scale_correction is None
+            or context.floor is None
+            or context.box is None
+        ):
+            raise RuntimeError("Steps 0-5 must run before target-box placement")
+
+        print("[step 6] inferring geometry-only placement orientation...")
+        context.placement_orientation = infer_placement_orientation(
+            context.box,
+            context.floor,
+            context.walls,
+            context.point_map,
+            context.mask_pm,
+        )
+        orientation = context.placement_orientation
+        print(
+            f"[step 6] {orientation.mode}: rear "
+            f"{orientation.primary_rear_face or 'unknown'}, "
+            f"confidence {orientation.confidence:.2f}"
+        )
+
+        dimensions = (
+            context.settings.target_width_m,
+            context.settings.target_depth_m,
+            context.settings.target_height_m,
+        )
+        if any(value is not None for value in dimensions):
+            if not all(value is not None for value in dimensions):
+                raise ValueError("target width, depth, and height must be provided together")
+            context.target_placement = build_target_box(
+                context.box,
+                context.floor,
+                context.walls,
+                orientation,
+                dimensions[0],
+                dimensions[1],
+                dimensions[2],
+            )
+            if context.target_placement is not None:
+                extents = context.target_placement.box.extents
+                print(
+                    f"[step 6] target box (m): {extents[0]:.2f} x "
+                    f"{extents[1]:.2f} x {extents[2]:.2f} "
+                    f"[{context.target_placement.anchor_mode}]"
+                )
+
+        if context.settings.debug:
+            pm_w, pm_h = context.moge.image_size
+            k_px = intrinsics_px(context.moge.metadata, pm_w, pm_h)
+            context.debug_placement_2d = draw_placement_debug_2d(
+                context.image_bgr,
+                context.box,
+                orientation,
+                context.walls,
+                k_px,
+                (
+                    context.image_bgr.shape[1] / pm_w,
+                    context.image_bgr.shape[0] / pm_h,
+                ),
+                context.target_placement,
+                context.selection.mask,
+            )
+            context.debug_placement_3d = export_placement_debug_glb(
+                context.moge.glb_bytes,
+                context.box,
+                orientation,
+                context.walls,
+                context.scale_correction,
+                context.target_placement,
+            )
+        return StageStatus.COMPLETED

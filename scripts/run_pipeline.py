@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Run the furniture replacement pipeline (steps 0-5) on one image.
+"""Run the furniture replacement pipeline (steps 0-6) on one image.
 
 Example:
     python scripts/run_pipeline.py --image path/to/room.jpg
@@ -42,8 +42,18 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="request and save MoGe mesh/debug assets (slower)",
     )
+    parser.add_argument("--new-width", type=float, default=None, help="target width in meters")
+    parser.add_argument("--new-depth", type=float, default=None, help="target depth in meters")
+    parser.add_argument("--new-height", type=float, default=None, help="target height in meters")
     parser.add_argument("--skip-moge", action="store_true", help="run only steps 0-2")
-    return parser.parse_args()
+    args = parser.parse_args()
+    dimensions = (args.new_width, args.new_depth, args.new_height)
+    if any(value is not None for value in dimensions):
+        if not all(value is not None for value in dimensions):
+            parser.error("--new-width, --new-depth, and --new-height are required together")
+        if any(value <= 0 for value in dimensions):
+            parser.error("target dimensions must be positive")
+    return args
 
 
 def main() -> None:
@@ -64,6 +74,10 @@ def main() -> None:
         overrides["moge_endpoint"] = args.moge_endpoint
     if args.moge_timeout is not None:
         overrides["moge_timeout"] = args.moge_timeout
+    if args.new_width is not None:
+        overrides["target_width_m"] = args.new_width
+        overrides["target_depth_m"] = args.new_depth
+        overrides["target_height_m"] = args.new_height
     if args.debug:
         overrides["debug"] = True
     if args.skip_moge:

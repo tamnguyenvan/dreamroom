@@ -18,9 +18,11 @@ from dreamroom.config import Settings
 from dreamroom.geometry3d import Box3D, FloorPlane
 from dreamroom.image_ops import load_image_bgr, mask_to_uint8, resize_max_side, save_image
 from dreamroom.moge_client import MogeResult
+from dreamroom.placement_geometry import PlacementOrientation, TargetBoxPlacement
 from dreamroom.pipeline import FurniturePipeline
 from dreamroom.pipeline.models import PipelineContext
 from dreamroom.pipeline.outputs import OutputWriter
+from dreamroom.pipeline.stages.placement import PlacementStage
 from dreamroom.pipeline.stages.walls import WallStage
 from dreamroom.pipeline.timing import print_latency_stats
 from dreamroom.segmenter import sample_points
@@ -352,8 +354,68 @@ def test_pipeline_run_writes_latency_stats(tmp_path, monkeypatch):
     assert stats["latency_seconds"]["step_3_moge"] is None
     assert stats["latency_seconds"]["step_4_fit_3d"] is None
     assert stats["latency_seconds"]["step_5_fit_walls"] is None
+    assert stats["latency_seconds"]["step_6_target_box"] is None
     assert stats["latency_seconds"]["total"] >= stats["latency_seconds"]["step_0_resize"]
     assert result.latency_seconds == stats["latency_seconds"]
+
+
+@pytest.mark.parametrize("debug", [False, True])
+def test_placement_stage_writes_separate_debug_assets(tmp_path, monkeypatch, debug):
+    image = np.zeros((10, 10, 3), dtype=np.uint8)
+    mask = np.zeros((10, 10), dtype=bool)
+    orientation = PlacementOrientation(
+        mode="ambiguous",
+        primary_rear_face=None,
+        secondary_anchor_face=None,
+        primary_wall_index=None,
+        secondary_wall_index=None,
+        confidence=0.0,
+        reason="test",
+    )
+    context = PipelineContext(
+        image_path=tmp_path / "room.png",
+        settings=Settings(debug=debug),
+        image_bgr=image,
+        selection=ObjectSelection(mask, [], []),
+        moge=MogeResult(
+            np.zeros((10, 10, 3)),
+            {
+                "image_size": [10, 10],
+                "intrinsics": [[1.0, 0.0, 0.5], [0.0, 1.0, 0.5], [0.0, 0.0, 1.0]],
+            },
+            glb_bytes=b"source",
+        ),
+        point_map=np.zeros((10, 10, 3)),
+        mask_pm=mask,
+        scale_correction=1.0,
+        floor=FloorPlane(np.zeros(3), np.array([0.0, 1.0, 0.0]), 1.0, 100),
+        box=Box3D(np.zeros(3), np.eye(3), np.ones(3)),
+    )
+    calls = []
+    monkeypatch.setattr(
+        "dreamroom.pipeline.stages.placement.infer_placement_orientation",
+        lambda *args: orientation,
+    )
+    monkeypatch.setattr(
+        "dreamroom.pipeline.stages.placement.draw_placement_debug_2d",
+        lambda *args: calls.append("2d") or image,
+    )
+    monkeypatch.setattr(
+        "dreamroom.pipeline.stages.placement.export_placement_debug_glb",
+        lambda *args: calls.append("3d") or b"placement-glb",
+    )
+
+    PlacementStage().run(context)
+
+    assert context.placement_orientation is orientation
+    if debug:
+        assert calls == ["2d", "3d"]
+        assert context.debug_placement_2d is image
+        assert context.debug_placement_3d == b"placement-glb"
+    else:
+        assert calls == []
+        assert context.debug_placement_2d is None
+        assert context.debug_placement_3d is None
 
 
 def test_production_moge_outputs_only_save_2d_debug(tmp_path):
@@ -370,6 +432,15 @@ def test_production_moge_outputs_only_save_2d_debug(tmp_path):
         box=Box3D(np.zeros(3), np.eye(3), np.ones(3)),
         floor=FloorPlane(np.zeros(3), np.array([0.0, 1.0, 0.0]), 1.0, 4),
         scale_correction=1.0,
+        placement_orientation=PlacementOrientation(
+            mode="ambiguous",
+            primary_rear_face=None,
+            secondary_anchor_face=None,
+            primary_wall_index=None,
+            secondary_wall_index=None,
+            confidence=0.0,
+            reason="test",
+        ),
         debug_2d=make_image(8, 8),
     )
 
@@ -378,9 +449,56 @@ def test_production_moge_outputs_only_save_2d_debug(tmp_path):
     assert (tmp_path / "box3d.json").is_file()
     assert (tmp_path / "walls3d.json").is_file()
     assert json.loads((tmp_path / "walls3d.json").read_text())["walls"] == []
+    assert json.loads((tmp_path / "placement.json").read_text())["mode"] == "ambiguous"
+    assert not (tmp_path / "target_box3d.json").exists()
     assert (tmp_path / "debug_2d.png").is_file()
     for name in ("point_map.npy", "moge_metadata.json", "output.glb", "depth.png", "normal.png"):
         assert not (tmp_path / name).exists(), name
+
+
+def test_target_box_and_separate_debug_outputs(tmp_path):
+    box = Box3D(np.zeros(3), np.eye(3), np.ones(3))
+    orientation = PlacementOrientation(
+        mode="free_standing",
+        primary_rear_face="axis0_negative",
+        secondary_anchor_face=None,
+        primary_wall_index=None,
+        secondary_wall_index=None,
+        confidence=0.6,
+        reason="test",
+    )
+    target = TargetBoxPlacement(
+        box=box,
+        rear_anchor=np.zeros(3),
+        rear_face_id="axis0_negative",
+        primary_wall_index=None,
+        secondary_wall_index=None,
+        wall_aligned=False,
+        tilt_degrees=None,
+        primary_wall_distance=None,
+    )
+    context = PipelineContext(
+        image_path=tmp_path / "room.jpg",
+        settings=Settings(outputs_root=tmp_path, debug=True),
+        moge=MogeResult(
+            np.zeros((2, 2, 3), dtype=np.float32),
+            {"image_size": [2, 2], "intrinsics": np.eye(3).tolist()},
+        ),
+        box=box,
+        floor=FloorPlane(np.zeros(3), np.array([0.0, 1.0, 0.0]), 1.0, 4),
+        scale_correction=1.0,
+        placement_orientation=orientation,
+        target_placement=target,
+        debug_placement_2d=make_image(8, 8),
+        debug_placement_3d=b"placement-glb",
+    )
+
+    OutputWriter.save_moge_outputs(tmp_path, context)
+
+    target_data = json.loads((tmp_path / "target_box3d.json").read_text())
+    assert target_data["rear_face_id"] == "axis0_negative"
+    assert (tmp_path / "debug_placement_2d.png").is_file()
+    assert (tmp_path / "debug_placement_3d.glb").read_bytes() == b"placement-glb"
 
 
 def test_mask_to_uint8():
