@@ -40,11 +40,12 @@ class Sam3Mask:
 
 @dataclass
 class SurfaceSegmentation:
-    """SAM 3 masks grouped by room-surface text prompt."""
+    """Provider-generated masks grouped by room-surface label."""
 
     masks: dict[str, list[Sam3Mask]]
     image_shape: tuple[int, int]
     model: str
+    provider: str = "sam3"
 
     def instances(self, label: str) -> list[Sam3Mask]:
         return self.masks.get(label, [])
@@ -60,6 +61,7 @@ class SurfaceSegmentation:
 
     def to_dict(self) -> dict:
         return {
+            "provider": self.provider,
             "model": self.model,
             "image_size_hw": list(self.image_shape),
             "prompts": {

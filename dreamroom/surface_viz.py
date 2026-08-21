@@ -1,4 +1,4 @@
-"""Separate 2D diagnostics for SAM 3 room-surface masks."""
+"""Separate 2D diagnostics for room-surface masks."""
 
 from __future__ import annotations
 
@@ -46,8 +46,9 @@ def draw_surface_debug_2d(
             f"wall {index}{score}",
         )
 
+    provider = "OneFormer" if segmentation.provider == "oneformer" else "SAM3"
     summary = (
-        f"SAM 3: walls={len(segmentation.instances('wall'))}  "
+        f"{provider}: walls={len(segmentation.instances('wall'))}  "
         f"floor={len(segmentation.instances('floor'))}  "
         f"rug={len(segmentation.instances('rug'))}"
     )

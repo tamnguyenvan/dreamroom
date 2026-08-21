@@ -10,18 +10,18 @@ Furniture replacement pipeline with dependency-based concurrent execution.
   its length in meters to get a px-per-meter scale.
 - **MoGe inference** — send the working image to the MoGe-2 API and receive a point
   map and metadata, plus optional debug assets.
-- **Surface segmentation** — upload the working image once to fal.ai and use SAM 3 text
-  prompts to segment wall, floor, and rug pixels.
-- **Geometry fitting** — map the SAM-selected floor+rug pixels into 3D, fit the floor,
+- **Surface segmentation** — use a deployed OneFormer semantic model first, then
+  SAM 3 text prompts, to segment wall, floor, and rug pixels.
+- **Geometry fitting** — map the selected floor+rug pixels into 3D, fit the floor,
   and generate a floor-aligned object box.
-- **Wall fitting** — map SAM-selected wall pixels into 3D and fit finite vertical,
+- **Wall fitting** — map selected wall pixels into 3D and fit finite vertical,
   floor-anchored wall planes.
 - **Target box** — infer a geometry-only placement orientation from the old box
   and walls, then optionally construct a floor-contact replacement box.
 - **Render** — draw the target box on the room image, resize the furniture
   reference to max-side 512, and render the replacement with Seedream 5.0 Pro.
 
-After resize, MoGe inference, SAM 3 segmentation, and furniture preprocessing
+After resize, MoGe inference, OneFormer/SAM3 segmentation, and furniture preprocessing
 start concurrently while object selection and reference input remain on the
 main thread. Downstream tasks start as soon as their dependencies finish:
 
@@ -29,7 +29,7 @@ main thread. Downstream tasks start as soon as their dependencies finish:
 graph LR
     resize --> object_selection --> reference_scale --> prepare_point_map
     resize --> moge_inference --> prepare_point_map
-    resize --> sam3_surfaces --> prepare_surface_masks
+    resize --> surface_segmentation --> prepare_surface_masks
     moge_inference --> prepare_surface_masks
     prepare_point_map --> fit_geometry
     prepare_surface_masks --> fit_geometry
@@ -49,7 +49,8 @@ dreamroom/
 │   ├── config.py           # Settings (paths, thresholds, sizes)
 │   ├── image_ops.py        # image load / resize / save
 │   ├── segmenter.py        # remote SimpleClick client
-│   ├── sam3_client.py      # fal.ai upload + SAM 3 text segmentation
+│   ├── oneformer_client.py # remote OneFormer semantic segmentation client
+│   ├── sam3_client.py      # fal.ai upload + SAM 3 text segmentation fallback
 │   ├── surface_viz.py      # separate SAM surface-mask diagnostics
 │   ├── geometry3d.py       # floor plane and 3D box fitting
 │   ├── wall_geometry.py    # segmented wall-plane fitting
@@ -82,6 +83,7 @@ python3.10 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 export DREAMROOM_SIMPLECLICK_ENDPOINT="https://blakestieper--simpleclick-interactive-segmentation-simpl-771f03.modal.run"
 export DREAMROOM_MOGE_ENDPOINT="https://blakestieper--moge-2-api-web.modal.run"
+export DREAMROOM_ONEFORMER_ENDPOINT="https://<your-oneformer-modal-app>.modal.run"
 export FAL_KEY="your-fal-api-key"
 export ARK_API_KEY="your-byteplus-modelark-api-key"
 ```
@@ -154,20 +156,23 @@ before 3D fitting. Point-map coordinates follow the GLB camera convention:
 `+X` right, `+Y` up, and `-Z` forward; normalized intrinsics are stored in the
 returned metadata.
 
-### SAM 3 room surfaces
+### OneFormer → SAM 3 room surfaces
 
-- The client uploads the resized working image once with
-  `fal_client.upload_file(...)` and reuses the returned URL.
-- Three concurrent requests to
-  [`fal-ai/sam-3/image`](https://fal.ai/models/fal-ai/sam-3/image/api) use the
+- The client first calls `DREAMROOM_ONEFORMER_ENDPOINT`, a Modal endpoint
+  running `shi-labs/oneformer_ade20k_swin_large` through Transformers semantic
+  segmentation. It consumes the ADE20K `wall`, `floor`, and `rug` classes.
+- If the endpoint is unset, fails, or does not return both wall and floor masks,
+  the client falls back to three concurrent requests to
+  [`fal-ai/sam-3/image`](https://fal.ai/models/fal-ai/sam-3/image/api) using the
   text prompts `wall`, `floor`, and `rug`.
-- Requests return separate binary masks with scores and boxes. Masks below
+- OneFormer and SAM3 return separate binary masks. SAM3 masks below
   `--sam3-min-score` are discarded and accepted masks are resized to point-map
   resolution with nearest-neighbor interpolation.
-- `FAL_KEY` is required. The model ID can be overridden with `--sam3-model` or
-  `DREAMROOM_SAM3_MODEL`.
+- Set `DREAMROOM_ONEFORMER_ENDPOINT` to the URL printed by `modal deploy`; the
+  endpoint is optional so existing SAM3 deployments remain usable. `FAL_KEY` is
+  required when SAM3 is reached.
 - In debug mode, the raw semantic evidence is written separately from the
-  geometry overlays as `debug_surfaces_2d.png` and three combined mask images.
+  geometry overlays as `debug_surfaces_2d.png` and provider-prefixed mask images.
 
 ### Segmented floor to 3D box
 
@@ -175,9 +180,9 @@ returned metadata.
   MoGe units to meters.
 - Valid masked points are extracted with light erosion and radial outlier
   clipping.
-- By default, points selected by the union of the SAM floor and rug masks are
+- By default, points selected by the union of the OneFormer or SAM3 floor and rug masks are
   used for constrained RANSAC floor-plane fitting. Selected-object pixels are
-  excluded. If SAM 3 is unavailable or its fit is too weak, the older manual
+  excluded. If OneFormer and SAM3 are unavailable or their fit is too weak, the older manual
   fallback fits RANSAC to non-object points in the bottom half of the image;
   if that also fails, a camera-up plane is used. The selected method is marked
   in `box3d.json` and `walls3d.json` (`sam3`, `manual`, or `camera_up`).
@@ -189,9 +194,9 @@ returned metadata.
 
 ### Segmented wall planes
 
-- By default, wall candidates come from SAM wall masks; the selected object and
-  points too close to or too far above the floor are excluded. If SAM 3 is
-  unavailable or produces no accepted wall, the manual fallback runs the
+- By default, wall candidates come from OneFormer or SAM3 wall masks; the selected object and
+  points too close to or too far above the floor are excluded. If both semantic
+  providers are unavailable or produce no accepted wall, the manual fallback runs the
   global point-cloud wall RANSAC from all eligible non-object pixels.
 - Vertical 3D wall fitting is reduced to line RANSAC in the fitted floor frame.
   Each SAM instance can produce up to two planes and each result is refined
@@ -258,9 +263,12 @@ Each run writes `outputs/<image-name>-<timestamp>/`:
 - `box3d.json` — calibrated box center, axes, extents, corners, floor plane,
   scale correction, and the floor fitting method used.
 - `walls3d.json` — detected wall planes, finite corners, support, residual,
-  confidence, and the floor/wall fitting methods used (`sam3` or `manual`).
-- `surfaces.json` — SAM 3 prompts, accepted mask scores, boxes, and areas.
-- `sam3_floor_mask.png` / `sam3_rug_mask.png` / `sam3_wall_mask.png` — combined semantic masks (debug mode).
+  confidence, and the floor/wall fitting methods used (`oneformer`, `sam3`, or
+  `manual`).
+- `surfaces.json` — provider, model, accepted mask scores, boxes, and areas.
+- `<provider>_floor_mask.png` / `<provider>_rug_mask.png` /
+  `<provider>_wall_mask.png` — combined semantic masks (debug mode), where
+  `<provider>` is `oneformer` or `sam3`.
 - `debug_surfaces_2d.png` — clean SAM surface-mask overlay (debug mode).
 - `placement.json` — placement mode, selected faces/walls, confidence, and per-face evidence.
 - `target_box3d.json` — replacement box and placement diagnostics when dimensions were supplied.
@@ -289,6 +297,9 @@ directory is written. MoGe-dependent tasks are reported as `skipped` when
   `DREAMROOM_SIMPLECLICK_ENDPOINT`.
 - The MoGe endpoint can be overridden with `DREAMROOM_MOGE_ENDPOINT` or the
   `--moge-endpoint` CLI option.
+- Deploy `third_party/OneFormer/oneformer_api.py` yourself with Modal and set
+  `DREAMROOM_ONEFORMER_ENDPOINT` to its URL. If unset, the pipeline starts with
+  SAM3.
 - MoGe can be skipped with `--skip-moge`, which is useful for validating the
   interactive object-selection and reference flow without the APIs.
 

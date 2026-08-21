@@ -35,6 +35,11 @@ class GeometryStage(PipelineStage):
 
         print("[geometry] fitting floor plane and 3D box...")
         object_points = extract_object_points(context.point_map, context.mask_pm)
+        surface_provider = (
+            context.surface_segmentation.provider
+            if context.surface_segmentation is not None
+            else "sam3"
+        )
         floor_points = None
         context.floor = None
         if (
@@ -52,9 +57,9 @@ class GeometryStage(PipelineStage):
                 )
                 context.floor = fit_floor_plane(floor_points)
                 if context.floor is not None:
-                    context.floor_fit_method = "sam3"
+                    context.floor_fit_method = surface_provider
             except Exception as exc:
-                print(f"[geometry] SAM3 floor fit failed: {exc}")
+                print(f"[geometry] {surface_provider} floor fit failed: {exc}")
 
         if context.floor is None:
             manual_points = floor_candidate_points(context.point_map, context.mask_pm)
@@ -62,7 +67,7 @@ class GeometryStage(PipelineStage):
             if context.floor is not None:
                 context.floor_fit_method = "manual"
                 print(
-                    "[geometry] SAM3 floor fit unavailable; "
+                    f"[geometry] {surface_provider} floor fit unavailable; "
                     "using manual bottom-image point-cloud fallback"
                 )
             else:

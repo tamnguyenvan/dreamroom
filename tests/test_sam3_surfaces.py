@@ -103,7 +103,7 @@ def test_surface_stage_resizes_masks_and_keeps_debug_separate(tmp_path, debug):
 
     context = PipelineContext(
         image_path=tmp_path / "room.png",
-        settings=Settings(debug=debug),
+        settings=Settings(debug=debug, oneformer_endpoint=None),
         image_bgr=image,
         moge=MogeResult(
             point_map=np.zeros((4, 5, 3), dtype=np.float32),
@@ -135,7 +135,7 @@ def test_surface_stage_failure_allows_manual_geometry_fallback(tmp_path):
 
     context = PipelineContext(
         image_path=tmp_path / "room.png",
-        settings=Settings(),
+        settings=Settings(oneformer_endpoint=None),
         image_bgr=image,
     )
 

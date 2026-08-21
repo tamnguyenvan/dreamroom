@@ -1,4 +1,4 @@
-"""SAM-selected wall fitting and final geometry visualization."""
+"""Room-surface wall fitting and final geometry visualization."""
 
 from __future__ import annotations
 
@@ -31,8 +31,13 @@ class WallStage(PipelineStage):
 
         context.walls = []
         context.wall_fit_method = None
+        surface_provider = (
+            context.surface_segmentation.provider
+            if context.surface_segmentation is not None
+            else "sam3"
+        )
         if context.surface_segmentation is not None:
-            print("[walls] fitting planes from SAM-selected pixels...")
+            print(f"[walls] fitting planes from {surface_provider}-selected pixels...")
             try:
                 context.walls = fit_segmented_wall_planes(
                     context.point_map,
@@ -41,13 +46,13 @@ class WallStage(PipelineStage):
                     context.floor,
                 )
             except Exception as exc:
-                print(f"[walls] SAM3 wall fit failed: {exc}")
+                print(f"[walls] {surface_provider} wall fit failed: {exc}")
             if context.walls:
-                context.wall_fit_method = "sam3"
+                context.wall_fit_method = surface_provider
 
         if not context.walls:
             print(
-                "[walls] SAM3 wall fit unavailable; "
+                f"[walls] {surface_provider} wall fit unavailable; "
                 "using manual global point-cloud fallback"
             )
             context.walls = fit_wall_planes(

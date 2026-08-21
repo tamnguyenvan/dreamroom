@@ -249,7 +249,7 @@ def test_pipeline_latency_stats(tmp_path, capsys):
     stats = {
         "resize": 0.1,
         "moge_inference": None,
-        "sam3_surfaces": None,
+        "surface_segmentation": None,
         "prepare_furniture": None,
         "object_selection": 1.2,
         "reference_scale": 0.3,
@@ -278,9 +278,11 @@ def test_pipeline_latency_stats(tmp_path, capsys):
 
     print_latency_stats(stats, report["summary"])
     output = capsys.readouterr().out
+    assert "resize: 0.100s" in output
     assert "render_furniture: skipped" in output
-    assert "moge_inference" not in output
-    assert "[stats] concurrency:" not in output
+    assert "moge_inference: skipped" in output
+    assert "[stats] summary:" in output
+    assert "concurrency_saved: 0.000s" in output
 
 
 def test_task_graph_runs_api_work_while_main_thread_handles_ui(tmp_path):
@@ -548,7 +550,7 @@ def test_pipeline_run_writes_latency_stats(tmp_path, monkeypatch):
     assert stats["latency_seconds"]["object_selection"] >= 0
     assert stats["latency_seconds"]["reference_scale"] >= 0
     assert stats["latency_seconds"]["moge_inference"] is None
-    assert stats["latency_seconds"]["sam3_surfaces"] is None
+    assert stats["latency_seconds"]["surface_segmentation"] is None
     assert stats["latency_seconds"]["prepare_furniture"] is None
     assert stats["latency_seconds"]["prepare_point_map"] is None
     assert stats["latency_seconds"]["prepare_surface_masks"] is None

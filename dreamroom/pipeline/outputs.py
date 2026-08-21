@@ -106,18 +106,19 @@ class OutputWriter:
                 json.dumps(context.surface_segmentation.to_dict(), indent=2)
             )
             if context.settings.debug:
+                prefix = context.surface_segmentation.provider
                 save_image(
-                    out_dir / "sam3_floor_mask.png",
+                    out_dir / f"{prefix}_floor_mask.png",
                     mask_to_uint8(
                         context.surface_segmentation.combined_mask("floor")
                     ),
                 )
                 save_image(
-                    out_dir / "sam3_rug_mask.png",
+                    out_dir / f"{prefix}_rug_mask.png",
                     mask_to_uint8(context.surface_segmentation.combined_mask("rug")),
                 )
                 save_image(
-                    out_dir / "sam3_wall_mask.png",
+                    out_dir / f"{prefix}_wall_mask.png",
                     mask_to_uint8(context.surface_segmentation.combined_mask("wall")),
                 )
         if context.debug_surfaces_2d is not None:

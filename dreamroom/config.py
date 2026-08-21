@@ -4,6 +4,7 @@ Environment variables are read once at import time:
 
 - ``DREAMROOM_SIMPLECLICK_ENDPOINT``: optional remote SimpleClick endpoint.
 - ``DREAMROOM_MOGE_ENDPOINT``: optional MoGe-2 endpoint override.
+- ``DREAMROOM_ONEFORMER_ENDPOINT``: optional OneFormer endpoint override.
 - ``DREAMROOM_SAM3_MODEL``: optional fal.ai SAM 3 model ID override.
 - ``FAL_KEY``: fal.ai API credential consumed by ``fal-client``.
 - ``ARK_API_KEY``: BytePlus ModelArk API credential for Seedream rendering.
@@ -20,6 +21,7 @@ DEFAULT_SIMPLECLICK_ENDPOINT = (
     "https://blakestieper--simpleclick-interactive-segmentation-simpl-771f03.modal.run"
 )
 DEFAULT_MOGE_ENDPOINT = "https://blakestieper--moge-2-api-web.modal.run"
+DEFAULT_ONEFORMER_ENDPOINT = "https://blakestieper--oneformer-semantic-segmentation-oneformers-e54847.modal.run"
 
 
 @dataclass(frozen=True)
@@ -44,6 +46,10 @@ class Settings:
         os.getenv("DREAMROOM_MOGE_ENDPOINT") or DEFAULT_MOGE_ENDPOINT
     )
     moge_timeout: float = 300.0
+
+    # Remote OneFormer semantic room-surface segmentation
+    oneformer_endpoint: str | None = DEFAULT_ONEFORMER_ENDPOINT
+    oneformer_timeout: float = 300.0
 
     # fal.ai SAM 3 room-surface segmentation
     sam3_model: str = os.getenv("DREAMROOM_SAM3_MODEL", "fal-ai/sam-3/image")
