@@ -115,7 +115,8 @@ Options: `--output-dir`, `--max-side`, `--threshold`, `--max-display-width`,
 `--moge-endpoint`, `--moge-timeout`, `--sam3-model`, `--sam3-timeout`,
 `--sam3-min-score`, `--new-dimensions WIDTH DEPTH HEIGHT`, `--debug`,
 `--furniture`, `--seedream-endpoint`, `--seedream-model`,
-`--seedream-timeout`, `--gemini-model`, `--gemini-timeout`, and `--skip-moge`
+`--seedream-timeout`, `--gemini-model`, `--gemini-timeout`,
+`--wall-snap-distance`, and `--skip-moge`
 (run only the interactive selection and reference flow). Seedream settings
 can also be overridden with `DREAMROOM_SEEDREAM_ENDPOINT` and
 `DREAMROOM_SEEDREAM_MODEL`.
@@ -234,6 +235,10 @@ returned metadata.
 - If replacement dimensions are supplied, the old rear-face bottom midpoint is
   used as the anchor. Alignment under 10 degrees snaps the target rear face
   parallel to its wall; larger tilts preserve the old orientation.
+- A wall-aligned rear face within `--wall-snap-distance` (default `0.4 m`) is
+  translated onto the primary wall plane. The target metadata records this as
+  `primary_wall_snapped=true` and `anchor_mode=wall_snapped`, together with the
+  pre-snap distance and configured threshold.
 - The target base is constructed at zero signed distance from the fitted floor.
   Corner placement also preserves the old secondary-wall clearance.
 - Ambiguous placement keeps the old horizontal axes and footprint center, and

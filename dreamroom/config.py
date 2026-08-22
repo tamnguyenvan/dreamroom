@@ -66,6 +66,7 @@ class Settings:
     target_width_m: float | None = None
     target_depth_m: float | None = None
     target_height_m: float | None = None
+    wall_snap_distance_m: float = 0.4
 
     # Optional Seedream furniture render
     furniture_path: Path | None = None

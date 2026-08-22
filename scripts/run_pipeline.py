@@ -64,6 +64,12 @@ def parse_args() -> argparse.Namespace:
         help="target width, depth, and height in meters",
     )
     parser.add_argument(
+        "--wall-snap-distance",
+        type=float,
+        default=None,
+        help="maximum rear-face distance to snap to its wall in meters (default 0.4)",
+    )
+    parser.add_argument(
         "--furniture",
         type=Path,
         default=None,
@@ -86,6 +92,8 @@ def parse_args() -> argparse.Namespace:
             parser.error("target dimensions must be positive")
     if args.sam3_min_score is not None and not 0.0 <= args.sam3_min_score <= 1.0:
         parser.error("--sam3-min-score must be between 0 and 1")
+    if args.wall_snap_distance is not None and args.wall_snap_distance < 0.0:
+        parser.error("--wall-snap-distance must be non-negative")
     if args.furniture is not None and dimensions is None:
         parser.error("--furniture requires --new-dimensions WIDTH DEPTH HEIGHT")
     return args
@@ -123,6 +131,8 @@ def main() -> None:
         overrides["target_width_m"] = args.new_dimensions[0]
         overrides["target_depth_m"] = args.new_dimensions[1]
         overrides["target_height_m"] = args.new_dimensions[2]
+    if args.wall_snap_distance is not None:
+        overrides["wall_snap_distance_m"] = args.wall_snap_distance
     if args.furniture is not None:
         overrides["furniture_path"] = args.furniture
     if args.seedream_endpoint is not None:

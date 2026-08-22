@@ -108,6 +108,9 @@ class TargetBoxPlacement:
     wall_aligned: bool
     tilt_degrees: float | None
     primary_wall_distance: float | None
+    primary_wall_distance_before_snap: float | None = None
+    primary_wall_snapped: bool = False
+    wall_snap_threshold: float | None = None
     secondary_clearance_preserved: bool = False
     anchor_mode: str = "rear_face"
 
@@ -137,6 +140,17 @@ class TargetBoxPlacement:
                 None
                 if self.primary_wall_distance is None
                 else round(float(self.primary_wall_distance), 4)
+            ),
+            "primary_wall_distance_before_snap": (
+                None
+                if self.primary_wall_distance_before_snap is None
+                else round(float(self.primary_wall_distance_before_snap), 4)
+            ),
+            "primary_wall_snapped": bool(self.primary_wall_snapped),
+            "wall_snap_threshold": (
+                None
+                if self.wall_snap_threshold is None
+                else round(float(self.wall_snap_threshold), 4)
             ),
             "secondary_clearance_preserved": bool(
                 self.secondary_clearance_preserved
@@ -503,12 +517,15 @@ def build_target_box(
     new_height: float,
     *,
     wall_alignment_degrees: float = 10.0,
+    wall_snap_distance: float = 0.4,
 ) -> TargetBoxPlacement:
     """Construct a floor-contact target box from the inferred rear face."""
 
     dimensions = np.array([new_width, new_depth, new_height], dtype=float)
     if not np.isfinite(dimensions).all() or np.any(dimensions <= 0):
         raise ValueError("target width, depth, and height must be positive")
+    if not np.isfinite(wall_snap_distance) or wall_snap_distance < 0:
+        raise ValueError("wall snap distance must be finite and non-negative")
     faces = {face.face_id: face for face in box_vertical_faces(old_box)}
     if orientation.primary_rear_face is None:
         up = floor.normal
@@ -531,6 +548,7 @@ def build_target_box(
             wall_aligned=False,
             tilt_degrees=None,
             primary_wall_distance=None,
+            wall_snap_threshold=wall_snap_distance,
             anchor_mode="center_fallback",
         )
 
@@ -578,6 +596,22 @@ def build_target_box(
         extents=dimensions,
     )
 
+    primary_distance_before_snap = None
+    primary_snapped = False
+    if primary_wall is not None:
+        wall_distance = float(primary_wall.signed_distance(rear_anchor))
+        primary_distance_before_snap = abs(wall_distance)
+        denominator = float(depth_direction @ primary_wall.normal)
+        if (
+            wall_aligned
+            and abs(wall_distance) <= wall_snap_distance
+            and abs(denominator) > 1e-6
+        ):
+            shift = (-wall_distance / denominator) * depth_direction
+            target_box.center = target_box.center + shift
+            rear_anchor = rear_anchor + shift
+            primary_snapped = True
+
     secondary_preserved = False
     if (
         orientation.secondary_anchor_face is not None
@@ -616,5 +650,9 @@ def build_target_box(
             if primary_wall is None
             else abs(float(primary_wall.signed_distance(rear_anchor)))
         ),
+        primary_wall_distance_before_snap=primary_distance_before_snap,
+        primary_wall_snapped=primary_snapped,
+        wall_snap_threshold=wall_snap_distance,
         secondary_clearance_preserved=secondary_preserved,
+        anchor_mode="wall_snapped" if primary_snapped else "rear_face",
     )

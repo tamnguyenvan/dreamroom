@@ -64,6 +64,7 @@ class PlacementStage(PipelineStage):
                 dimensions[0],
                 dimensions[1],
                 dimensions[2],
+                wall_snap_distance=context.settings.wall_snap_distance_m,
             )
             if context.target_placement is not None:
                 extents = context.target_placement.box.extents

@@ -93,12 +93,57 @@ def test_wall_backed_orientation_and_target_box():
     assert orientation.primary_rear_face == "axis1_positive"
     assert target is not None and target.wall_aligned
     assert target.box.extents == pytest.approx([3.0, 2.0, 1.5])
-    assert target.rear_anchor == pytest.approx([0.0, 0.0, -3.5])
-    assert target.primary_wall_distance == pytest.approx(0.2)
+    assert target.rear_anchor == pytest.approx([0.0, 0.0, -3.7])
+    assert target.primary_wall_distance == pytest.approx(0.0)
+    assert target.primary_wall_distance_before_snap == pytest.approx(0.2)
+    assert target.primary_wall_snapped
+    assert target.wall_snap_threshold == pytest.approx(0.4)
+    assert target.anchor_mode == "wall_snapped"
+    half_width = 0.5 * target.box.extents[0] * target.box.axes[0]
+    rear_edge = np.array(
+        [target.rear_anchor - half_width, target.rear_anchor + half_width]
+    )
+    assert back_wall.signed_distance(rear_edge) == pytest.approx(
+        np.zeros(2), abs=1e-8
+    )
     assert FLOOR.signed_distance(target.box.corners()[:4]) == pytest.approx(
         np.zeros(4), abs=1e-8
     )
     assert np.linalg.det(target.box.axes.T) == pytest.approx(1.0)
+
+
+def test_wall_backed_target_keeps_gap_beyond_snap_threshold():
+    wall = wall_from_bottom_edge(
+        [-3.0, 0.0, -4.0],
+        [3.0, 0.0, -4.0],
+        [0.0, 0.0, 1.0],
+    )
+    orientation = PlacementOrientation(
+        mode="wall_backed",
+        primary_rear_face="axis1_positive",
+        secondary_anchor_face=None,
+        primary_wall_index=0,
+        secondary_wall_index=None,
+        confidence=0.8,
+        reason="test",
+    )
+
+    target = build_target_box(
+        old_box(),
+        FLOOR,
+        [wall],
+        orientation,
+        3.0,
+        2.0,
+        1.5,
+        wall_snap_distance=0.4,
+    )
+
+    assert target.rear_anchor == pytest.approx([0.0, 0.0, -3.5])
+    assert target.primary_wall_distance == pytest.approx(0.5)
+    assert target.primary_wall_distance_before_snap == pytest.approx(0.5)
+    assert not target.primary_wall_snapped
+    assert target.anchor_mode == "rear_face"
 
 
 def test_corner_orientation_preserves_secondary_wall_clearance():
@@ -131,6 +176,8 @@ def test_corner_orientation_preserves_secondary_wall_clearance():
         orientation.secondary_anchor_face,
     } == {"axis1_positive", "axis0_negative"}
     assert target is not None and target.secondary_clearance_preserved
+    assert target.primary_wall_snapped
+    assert target.primary_wall_distance == pytest.approx(0.0, abs=1e-8)
     assert FLOOR.signed_distance(target.box.corners()[:4]) == pytest.approx(
         np.zeros(4), abs=1e-8
     )
@@ -156,6 +203,7 @@ def test_target_keeps_old_orientation_when_wall_tilt_is_large():
     target = build_target_box(box, FLOOR, [wall], orientation, 2.0, 1.0, 1.0)
 
     assert target is not None and not target.wall_aligned
+    assert not target.primary_wall_snapped
     assert target.tilt_degrees == pytest.approx(30.0, abs=0.1)
     assert target.box.axes[1] == pytest.approx([0.0, 0.0, 1.0])
 
