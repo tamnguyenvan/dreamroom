@@ -33,9 +33,21 @@ def test_crop_rejects_empty_or_too_large_selection():
         crop_selected_object(image, np.zeros((5, 8), dtype=bool))
 
     mask = np.zeros((5, 8), dtype=bool)
-    mask[:, :6] = True
-    with pytest.raises(ValueError, match="larger than the required square crop"):
+    mask[:, :8] = True
+    with pytest.raises(ValueError, match="does not fit any supported crop aspect ratio"):
         crop_selected_object(image, mask)
+
+
+def test_crop_falls_back_to_best_supported_ratio_for_wide_selection():
+    image = np.zeros((9, 16, 3), dtype=np.uint8)
+    mask = np.zeros((9, 16), dtype=bool)
+    mask[1:8, 2:14] = True
+
+    crop = crop_selected_object(image, mask)
+
+    assert crop.aspect_ratio == "16:9"
+    assert crop.image_bgr.shape == (9, 16, 3)
+    assert crop.to_dict()["size_hw"] == [9, 16]
 
 
 def test_resize_and_stitch_patch():
@@ -44,7 +56,10 @@ def test_resize_and_stitch_patch():
     mask[1:3, 4:6] = True
     crop = crop_selected_object(image, mask)
 
-    resized = resize_patch(np.full((2, 2, 3), 9, dtype=np.uint8), crop.size)
+    resized = resize_patch(
+        np.full((2, 2, 3), 9, dtype=np.uint8),
+        (crop.width, crop.height),
+    )
     stitched = stitch_patch(image, resized, crop)
 
     assert resized.shape == (5, 5, 3)

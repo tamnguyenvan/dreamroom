@@ -36,14 +36,18 @@ def test_gemini_client_uploads_square_input_and_uses_edit_schema(monkeypatch):
         SimpleNamespace(upload_file=upload_file, subscribe=subscribe),
     )
 
-    result = GeminiClient(timeout=17.0).remove_object(image, "remove the object")
+    result = GeminiClient(timeout=17.0).remove_object(
+        image,
+        "remove the object",
+        aspect_ratio="16:9",
+    )
 
     assert calls["model"] == "google/nano-banana-lite/edit"
     assert calls["uploaded_shape"] == (8, 8)
     assert calls["arguments"] == {
         "prompt": "remove the object",
         "image_urls": ["https://fal.example/input.png"],
-        "aspect_ratio": "1:1",
+        "aspect_ratio": "16:9",
         "output_format": "png",
         "num_images": 1,
         "limit_generations": True,

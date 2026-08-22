@@ -135,11 +135,12 @@ def test_render_stage_resizes_furniture_and_sends_two_inputs(tmp_path):
             return fake_result
 
     class FakeGeminiClient:
-        def remove_object(self, image, prompt):
+        def remove_object(self, image, prompt, *, aspect_ratio):
             assert image.shape[:2] == (600, 600)
             assert prompt == (
                 "Remove the selected object and keep everything else in the room unchanged."
             )
+            assert aspect_ratio == "1:1"
             assert np.any((image[:, :, 2] > 200) & (image[:, :, 1] < 50))
             encoded = cv2.imencode(".png", np.full((8, 8, 3), 7, dtype=np.uint8))[1]
             return GeminiEditResult(

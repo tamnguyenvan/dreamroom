@@ -246,10 +246,12 @@ returned metadata.
 
 - `--furniture` requires all three replacement dimensions. The furniture image
   is loaded locally and resized to max-side 512 with aspect ratio preserved.
-- The selected-object region is cropped as a direct square slice whose edge is
-  the shorter side of the working room image. Gemini Nano Banana Lite edits
-  that 1:1 patch to remove the old object; the result is resized back to the
-  exact crop size and stitched into the room before the target box is drawn.
+- The selected-object region is cropped as a direct slice. It uses a 1:1 crop
+  whose edge is the shorter side of the working room image when the selection
+  fits; otherwise it chooses the closest supported Gemini aspect ratio from
+  the model list. Gemini edits that patch to remove the old object; the result
+  is resized back to the exact crop size and stitched into the room before the
+  target box is drawn.
 - A clean copy of the object-removed room image receives the fitted target box
   as a red 3D wireframe projected with the MoGe camera intrinsics.
 - Seedream receives exactly two independent image inputs: Image 1 is the

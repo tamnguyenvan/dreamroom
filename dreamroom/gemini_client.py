@@ -14,6 +14,8 @@ import cv2
 import numpy as np
 import requests
 
+from .object_removal import SUPPORTED_ASPECT_RATIOS
+
 logger = logging.getLogger(__name__)
 
 DEFAULT_MODEL = "google/nano-banana-lite/edit"
@@ -51,9 +53,17 @@ class GeminiClient:
         self.model = model
         self.timeout = timeout
 
-    def remove_object(self, image_bgr: np.ndarray, prompt: str) -> GeminiEditResult:
-        """Remove the selected object from one uploaded square image."""
+    def remove_object(
+        self,
+        image_bgr: np.ndarray,
+        prompt: str,
+        *,
+        aspect_ratio: str = "1:1",
+    ) -> GeminiEditResult:
+        """Remove the selected object from one uploaded crop."""
 
+        if aspect_ratio not in SUPPORTED_ASPECT_RATIOS:
+            raise ValueError(f"unsupported Gemini aspect ratio: {aspect_ratio!r}")
         fal_client = self._load_fal_client()
         image_url = self._upload_image(fal_client, image_bgr)
         started = time.perf_counter()
@@ -62,7 +72,7 @@ class GeminiClient:
             arguments={
                 "prompt": prompt,
                 "image_urls": [image_url],
-                "aspect_ratio": "1:1",
+                "aspect_ratio": aspect_ratio,
                 "output_format": "png",
                 "num_images": 1,
                 "limit_generations": True,

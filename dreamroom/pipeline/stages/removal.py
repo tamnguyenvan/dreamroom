@@ -7,7 +7,7 @@ from collections.abc import Callable
 from ...gemini_client import GeminiClient, GeminiEditResult
 from ...image_ops import decode_image_bgr
 from ...object_removal import (
-    SquareObjectCrop,
+    ObjectCrop,
     annotate_selected_object,
     crop_selected_object,
     resize_patch,
@@ -53,18 +53,19 @@ class RemovalStage(PipelineStage):
 
         object_crop = crop_selected_object(context.image_bgr, context.selection.mask)
         crop_mask = context.selection.mask[
-            object_crop.y : object_crop.y + object_crop.size,
-            object_crop.x : object_crop.x + object_crop.size,
+            object_crop.y : object_crop.y + object_crop.height,
+            object_crop.x : object_crop.x + object_crop.width,
         ]
         removal_input = annotate_selected_object(object_crop.image_bgr, crop_mask)
         print("[removal] calling Gemini Nano Banana Lite...")
         result = self._client_factory(context).remove_object(
             removal_input,
             OBJECT_REMOVAL_PROMPT,
+            aspect_ratio=object_crop.aspect_ratio,
         )
         removed_patch = resize_patch(
             decode_image_bgr(result.image_bytes),
-            object_crop.size,
+            (object_crop.width, object_crop.height),
         )
         context.object_removal_image = stitch_patch(
             context.image_bgr,
@@ -86,7 +87,7 @@ class RemovalStage(PipelineStage):
     @staticmethod
     def _metadata(
         result: GeminiEditResult,
-        object_crop: SquareObjectCrop,
+        object_crop: ObjectCrop,
         patch_size_hw: tuple[int, int],
         source_size_hw: tuple[int, int],
     ) -> dict:
