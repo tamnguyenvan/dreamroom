@@ -10,15 +10,18 @@ import cv2
 import numpy as np
 
 from dreamroom.config import Settings
+from dreamroom.gemini_client import GeminiEditResult
 from dreamroom.geometry3d import Box3D, FloorPlane
 from dreamroom.moge_client import MogeResult
 from dreamroom.pipeline.models import PipelineContext
 from dreamroom.pipeline.outputs import OutputWriter
 from dreamroom.pipeline.stages.base import StageStatus
+from dreamroom.pipeline.stages.removal import RemovalStage
 from dreamroom.pipeline.stages.render import FurnitureStage, RenderStage
 from dreamroom.placement_geometry import TargetBoxPlacement
 from dreamroom.render_viz import draw_target_box_2d
 from dreamroom.seedream_client import SeedreamClient, SeedreamResult
+from dreamroom.ui.strokes import ObjectSelection
 
 
 def _target() -> TargetBoxPlacement:
@@ -131,9 +134,24 @@ def test_render_stage_resizes_furniture_and_sends_two_inputs(tmp_path):
             assert "red wireframe target box" in prompt
             return fake_result
 
+    class FakeGeminiClient:
+        def remove_object(self, image, prompt):
+            assert image.shape[:2] == (600, 600)
+            assert prompt == (
+                "Remove the selected object and keep everything else in the room unchanged."
+            )
+            assert np.any((image[:, :, 2] > 200) & (image[:, :, 1] < 50))
+            encoded = cv2.imencode(".png", np.full((8, 8, 3), 7, dtype=np.uint8))[1]
+            return GeminiEditResult(
+                image_bytes=encoded.tobytes(),
+                image_url="data:image/png;base64,removed",
+                response={"images": [{"url": "data:image/png;base64,removed"}]},
+                elapsed_seconds=0.25,
+            )
+
     context = PipelineContext(
         image_path=tmp_path / "room.jpg",
-        settings=Settings(furniture_path=furniture_path),
+        settings=Settings(furniture_path=furniture_path, debug=True),
         image_bgr=room,
         moge=MogeResult(
             np.zeros((300, 400, 3), dtype=np.float32),
@@ -146,22 +164,36 @@ def test_render_stage_resizes_furniture_and_sends_two_inputs(tmp_path):
         floor=FloorPlane(np.zeros(3), np.array([0.0, 1.0, 0.0]), 1.0, 100),
         scale_correction=1.0,
         target_placement=_target(),
+        selection=ObjectSelection(
+            mask=np.pad(
+                np.ones((40, 40), dtype=bool),
+                ((260, 300), (380, 380)),
+            ),
+            positive_points=[[400, 280]],
+            negative_points=[],
+        ),
     )
 
     prepare_status = FurnitureStage().run(context)
+    removal_status = RemovalStage(lambda _: FakeGeminiClient()).run(context)
     status = RenderStage(lambda _: FakeClient()).run(context)
 
     assert prepare_status is StageStatus.COMPLETED
+    assert removal_status is StageStatus.COMPLETED
     assert status is StageStatus.COMPLETED
     assert context.render_room is not None
     assert context.render_furniture is not None
     assert max(context.render_furniture.shape[:2]) == 512
     assert context.rendered_image == b"rendered-jpeg"
     assert context.render_metadata["input_mode"] == "two_images"
+    assert context.render_metadata["object_removal"]["crop"]["size"] == 600
     assert json.loads(json.dumps(context.render_metadata))["furniture_input_size_hw"] == [512, 398]
 
     OutputWriter.save_moge_outputs(tmp_path, context)
     assert (tmp_path / "render_room_target_box.png").is_file()
     assert (tmp_path / "render_furniture_reference.png").is_file()
+    assert (tmp_path / "render_object_removal_input.png").is_file()
+    assert (tmp_path / "render_object_removed_patch.png").is_file()
+    assert (tmp_path / "render_room_object_removed.png").is_file()
     assert (tmp_path / "rendered_furniture.jpg").read_bytes() == b"rendered-jpeg"
     assert (tmp_path / "render.json").is_file()

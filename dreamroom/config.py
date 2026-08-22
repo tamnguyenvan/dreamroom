@@ -56,6 +56,12 @@ class Settings:
     sam3_timeout: float = 300.0
     sam3_min_score: float = 0.25
 
+    # fal.ai Gemini object removal
+    gemini_model: str = os.getenv(
+        "DREAMROOM_GEMINI_MODEL", "google/nano-banana-lite/edit"
+    )
+    gemini_timeout: float = 300.0
+
     # Optional replacement dimensions in meters
     target_width_m: float | None = None
     target_depth_m: float | None = None

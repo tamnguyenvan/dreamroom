@@ -35,7 +35,7 @@ class FurnitureStage(PipelineStage):
 
 class RenderStage(PipelineStage):
     name = "render_furniture"
-    dependencies = ("target_box", "prepare_furniture")
+    dependencies = ("target_box", "prepare_furniture", "remove_selected_object")
     background = True
 
     def __init__(
@@ -64,15 +64,16 @@ class RenderStage(PipelineStage):
             or context.moge is None
             or context.target_placement is None
             or context.render_furniture is None
+            or context.object_removal_image is None
         ):
             raise RuntimeError(
-                "geometry and furniture preparation must finish before rendering; "
+                "object removal, geometry, and furniture preparation must finish before rendering; "
                 "provide --new-dimensions WIDTH DEPTH HEIGHT"
             )
 
         pm_w, pm_h = context.moge.image_size
         room_with_box = draw_target_box_2d(
-            context.image_bgr,
+            context.object_removal_image,
             context.target_placement,
             intrinsics_px(context.moge.metadata, pm_w, pm_h),
             (
@@ -83,8 +84,9 @@ class RenderStage(PipelineStage):
         extents = context.target_placement.box.extents
         prompt = (
             "Replace the selected old furniture in Image 1 with the furniture "
-            "shown in Image 2. Image 1 is the original room photo with a red "
-            "wireframe target box marking the exact placement region. Match "
+            "shown in Image 2. Image 1 is the room photo with the old furniture "
+            "removed and a red wireframe target box marking the exact placement "
+            "region. Match "
             f"the target box dimensions of {extents[0]:.2f} m width, "
             f"{extents[1]:.2f} m depth, and {extents[2]:.2f} m height. "
             "Place the new furniture on the floor inside that box, matching "
@@ -105,6 +107,7 @@ class RenderStage(PipelineStage):
         context.render_metadata = {
             **result.to_dict(),
             "prompt": prompt,
+            "object_removal": context.object_removal_metadata,
             "furniture_source": str(context.settings.furniture_path.resolve()),
             "room_input_size_hw": list(room_with_box.shape[:2]),
             "furniture_input_size_hw": list(context.render_furniture.shape[:2]),

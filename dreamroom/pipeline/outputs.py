@@ -148,6 +148,15 @@ class OutputWriter:
             save_image(out_dir / "render_room_target_box.png", context.render_room)
         if context.render_furniture is not None:
             save_image(out_dir / "render_furniture_reference.png", context.render_furniture)
+        if context.object_removal_crop is not None:
+            save_image(out_dir / "render_object_removal_input.png", context.object_removal_crop)
+        if context.object_removal_patch is not None:
+            save_image(
+                out_dir / "render_object_removed_patch.png",
+                context.object_removal_patch,
+            )
+        if context.object_removal_image is not None:
+            save_image(out_dir / "render_room_object_removed.png", context.object_removal_image)
         if context.rendered_image is not None:
             (out_dir / "rendered_furniture.jpg").write_bytes(context.rendered_image)
         if context.render_metadata is not None:

@@ -557,6 +557,7 @@ def test_pipeline_run_writes_latency_stats(tmp_path, monkeypatch):
     assert stats["latency_seconds"]["fit_geometry"] is None
     assert stats["latency_seconds"]["fit_walls"] is None
     assert stats["latency_seconds"]["target_box"] is None
+    assert stats["latency_seconds"]["remove_selected_object"] is None
     assert stats["latency_seconds"]["render_furniture"] is None
     assert stats["latency_seconds"]["total"] >= stats["latency_seconds"]["resize"]
     assert stats["tasks"]["moge_inference"]["status"] == "skipped"

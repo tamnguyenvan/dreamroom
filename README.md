@@ -18,8 +18,10 @@ Furniture replacement pipeline with dependency-based concurrent execution.
   floor-anchored wall planes.
 - **Target box** — infer a geometry-only placement orientation from the old box
   and walls, then optionally construct a floor-contact replacement box.
-- **Render** — draw the target box on the room image, resize the furniture
-  reference to max-side 512, and render the replacement with Seedream 5.0 Pro.
+- **Render** — remove the selected object from an unpadded square crop with
+  Gemini Nano Banana Lite through fal.ai, stitch that patch back into the room,
+  draw the target box, resize the furniture reference to max-side 512, and
+  render the replacement with Seedream 5.0 Pro.
 
 After resize, MoGe inference, OneFormer/SAM3 segmentation, and furniture preprocessing
 start concurrently while object selection and reference input remain on the
@@ -28,6 +30,7 @@ main thread. Downstream tasks start as soon as their dependencies finish:
 ```mermaid
 graph LR
     resize --> object_selection --> reference_scale --> prepare_point_map
+    object_selection --> remove_selected_object --> render_furniture
     resize --> moge_inference --> prepare_point_map
     resize --> surface_segmentation --> prepare_surface_masks
     moge_inference --> prepare_surface_masks
@@ -37,9 +40,11 @@ graph LR
     resize --> prepare_furniture --> render_furniture
 ```
 
-API calls are launched before user confirmation to minimize critical-path
-latency. Aborting the UI requests best-effort cancellation, but an already
-running provider request may still complete and incur usage.
+MoGe and room-surface API calls are launched before user confirmation to
+minimize critical-path latency. Gemini removal starts immediately after the
+selection is confirmed and overlaps reference-scale and geometry preparation.
+Aborting the UI requests best-effort cancellation, but an already running
+provider request may still complete and incur usage.
 
 ## Project layout
 
@@ -57,6 +62,8 @@ dreamroom/
 │   ├── placement_geometry.py # placement orientation and target box
 │   ├── placement_viz.py    # separate placement debug image and GLB
 │   ├── render_viz.py       # red target-box input image
+│   ├── object_removal.py   # square crop and patch stitch helpers
+│   ├── gemini_client.py    # fal.ai Gemini Nano Banana Lite edit client
 │   ├── seedream_client.py  # BytePlus ModelArk render client
 │   ├── moge_client.py      # MoGe-2 API client and response parser
 │   ├── pipeline/            # task graph, shared context, timing, and outputs
@@ -108,8 +115,8 @@ Options: `--output-dir`, `--max-side`, `--threshold`, `--max-display-width`,
 `--moge-endpoint`, `--moge-timeout`, `--sam3-model`, `--sam3-timeout`,
 `--sam3-min-score`, `--new-dimensions WIDTH DEPTH HEIGHT`, `--debug`,
 `--furniture`, `--seedream-endpoint`, `--seedream-model`,
-`--seedream-timeout`, and `--skip-moge` (run only the interactive selection and
-reference flow). Seedream settings
+`--seedream-timeout`, `--gemini-model`, `--gemini-timeout`, and `--skip-moge`
+(run only the interactive selection and reference flow). Seedream settings
 can also be overridden with `DREAMROOM_SEEDREAM_ENDPOINT` and
 `DREAMROOM_SEEDREAM_MODEL`.
 
@@ -174,6 +181,12 @@ returned metadata.
 - In debug mode, the raw semantic evidence is written separately from the
   geometry overlays as `debug_surfaces_2d.png` and provider-prefixed mask images.
 
+### Gemini object removal
+
+- Gemini Nano Banana Lite is called through fal.ai using `FAL_KEY`; the model
+  defaults to `google/nano-banana-lite/edit` and can be overridden with
+  `DREAMROOM_GEMINI_MODEL` or `--gemini-model`.
+
 ### Segmented floor to 3D box
 
 - Reference-line endpoints are sampled in the point map and used to convert
@@ -233,11 +246,15 @@ returned metadata.
 
 - `--furniture` requires all three replacement dimensions. The furniture image
   is loaded locally and resized to max-side 512 with aspect ratio preserved.
-- A clean copy of the working room image receives the fitted target box as a
-  red 3D wireframe projected with the MoGe camera intrinsics.
-- Seedream receives exactly two independent image inputs: Image 1 is the room
-  with the red guide box, and Image 2 is the furniture reference. They are not
-  stitched or composited together.
+- The selected-object region is cropped as a direct square slice whose edge is
+  the shorter side of the working room image. Gemini Nano Banana Lite edits
+  that 1:1 patch to remove the old object; the result is resized back to the
+  exact crop size and stitched into the room before the target box is drawn.
+- A clean copy of the object-removed room image receives the fitted target box
+  as a red 3D wireframe projected with the MoGe camera intrinsics.
+- Seedream receives exactly two independent image inputs: Image 1 is the
+  object-removed room with the red guide box, and Image 2 is the furniture
+  reference. They are not stitched or composited together.
 - The default request uses `dola-seedream-5-0-pro-260628`, AP Southeast,
   `size=1K`, `response_format=url`, `output_format=jpeg`, watermark disabled,
   and `optimize_prompt_options.mode=fast` for lower latency. `ARK_API_KEY` is
@@ -274,6 +291,10 @@ Each run writes `outputs/<image-name>-<timestamp>/`:
 - `target_box3d.json` — replacement box and placement diagnostics when dimensions were supplied.
 - `render_room_target_box.png` — room input with the red target-box guide (debug).
 - `render_furniture_reference.png` — resized furniture input (max-side 512, debug).
+- `render_object_removal_input.png` — square crop with the selected-object
+  mask/outline sent to Gemini (debug).
+- `render_object_removed_patch.png` — Gemini patch resized to the crop size (debug).
+- `render_room_object_removed.png` — stitched room before the red target-box guide (debug).
 - `rendered_furniture.jpg` — downloaded Seedream output. In production rendering
   mode (without `--debug`), this is the only file written to the output folder.
 - `render.json` — Seedream URL, timing, usage, prompt, and input metadata (debug).

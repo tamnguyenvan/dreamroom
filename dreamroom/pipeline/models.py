@@ -51,6 +51,10 @@ class PipelineContext:
     debug_placement_3d: bytes | None = None
     render_room: np.ndarray | None = None
     render_furniture: np.ndarray | None = None
+    object_removal_crop: np.ndarray | None = None
+    object_removal_patch: np.ndarray | None = None
+    object_removal_image: np.ndarray | None = None
+    object_removal_metadata: dict | None = None
     rendered_image: bytes | None = None
     render_metadata: dict | None = None
     latency_seconds: dict[str, float | None] = field(default_factory=dict)

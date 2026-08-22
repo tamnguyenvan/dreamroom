@@ -46,6 +46,10 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="minimum SAM 3 mask confidence (default 0.25)",
     )
+    parser.add_argument("--gemini-model", default=None, help="Gemini fal.ai model ID")
+    parser.add_argument(
+        "--gemini-timeout", type=float, default=None, help="Gemini fal.ai request timeout (s)"
+    )
     parser.add_argument(
         "--debug",
         action="store_true",
@@ -111,6 +115,10 @@ def main() -> None:
         overrides["sam3_timeout"] = args.sam3_timeout
     if args.sam3_min_score is not None:
         overrides["sam3_min_score"] = args.sam3_min_score
+    if args.gemini_model is not None:
+        overrides["gemini_model"] = args.gemini_model
+    if args.gemini_timeout is not None:
+        overrides["gemini_timeout"] = args.gemini_timeout
     if args.new_dimensions is not None:
         overrides["target_width_m"] = args.new_dimensions[0]
         overrides["target_depth_m"] = args.new_dimensions[1]

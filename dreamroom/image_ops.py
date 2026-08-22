@@ -20,6 +20,15 @@ def load_image_bgr(path: str | Path) -> np.ndarray:
     return image
 
 
+def decode_image_bgr(image_bytes: bytes) -> np.ndarray:
+    """Decode image bytes as BGR; raises a clear error on failure."""
+
+    image = cv2.imdecode(np.frombuffer(image_bytes, dtype=np.uint8), cv2.IMREAD_COLOR)
+    if image is None:
+        raise ValueError("could not decode image bytes")
+    return image
+
+
 def resize_max_side(image: np.ndarray, max_side: int = 1280) -> tuple[np.ndarray, float]:
     """Resize so the longest side is at most ``max_side``.
 
