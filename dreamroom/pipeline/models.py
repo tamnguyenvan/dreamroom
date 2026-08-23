@@ -33,6 +33,7 @@ class PipelineContext:
     mask_pm: np.ndarray | None = None
     scale_correction: float | None = None
     calibration: dict = field(default_factory=dict)
+    depth_correction: dict = field(default_factory=dict)
     surface_segmentation: SurfaceSegmentation | None = None
     floor_surface_mask_pm: np.ndarray | None = None
     rug_surface_mask_pm: np.ndarray | None = None
@@ -81,6 +82,7 @@ class PipelineResult:
     rendered_image: bytes | None = None
     render_metadata: dict | None = None
     scale_correction: float | None = None
+    depth_correction: dict = field(default_factory=dict)
     latency_seconds: dict[str, float | None] = field(default_factory=dict)
 
     @classmethod
@@ -107,5 +109,6 @@ class PipelineResult:
             rendered_image=context.rendered_image,
             render_metadata=context.render_metadata,
             scale_correction=context.scale_correction,
+            depth_correction=context.depth_correction,
             latency_seconds=context.latency_seconds,
         )

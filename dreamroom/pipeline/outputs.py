@@ -83,6 +83,7 @@ class OutputWriter:
                     "floor_fit_method": context.floor_fit_method,
                     "scale_correction": context.scale_correction,
                     "calibration": context.calibration,
+                    "depth_correction": context.depth_correction,
                     "coordinate_frame": "MoGe glb camera (+X right, +Y up, -Z forward), meters",
                 },
                 indent=2,

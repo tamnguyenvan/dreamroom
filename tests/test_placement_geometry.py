@@ -10,8 +10,12 @@ import pytest
 from dreamroom.geometry3d import Box3D, FloorPlane
 from dreamroom.placement_geometry import (
     PlacementOrientation,
+    TargetBoxPlacement,
+    apply_target_depth_correction,
+    apply_view_angle_depth_correction,
     box_vertical_faces,
     build_target_box,
+    depth_correction_factor,
     infer_placement_orientation,
 )
 from dreamroom.placement_viz import export_placement_debug_glb
@@ -76,6 +80,98 @@ def test_box_vertical_faces_have_stable_opposites():
     assert FLOOR.signed_distance(faces["axis1_positive"].bottom_edge) == pytest.approx(
         np.zeros(2)
     )
+
+
+def test_view_angle_depth_factor_reaches_full_accuracy_at_45_degrees():
+    assert depth_correction_factor(0.0) == pytest.approx(1.25)
+    assert depth_correction_factor(22.5) == pytest.approx(1.17678, abs=1e-4)
+    assert depth_correction_factor(45.0) == pytest.approx(1.0)
+    assert depth_correction_factor(90.0) == pytest.approx(1.0)
+
+
+def test_head_on_depth_correction_preserves_rear_face_and_floor_contact():
+    box = Box3D(
+        center=np.array([0.0, 0.0, -3.0]),
+        axes=np.array(
+            [
+                [1.0, 0.0, 0.0],
+                [0.0, 0.0, -1.0],
+                [0.0, 1.0, 0.0],
+            ]
+        ),
+        extents=np.array([2.0, 1.0, 1.0]),
+    )
+    orientation = PlacementOrientation(
+        mode="wall_backed",
+        primary_rear_face="axis1_positive",
+        secondary_anchor_face=None,
+        primary_wall_index=0,
+        secondary_wall_index=None,
+        confidence=0.9,
+        reason="test",
+    )
+
+    corrected, info = apply_view_angle_depth_correction(box, orientation)
+
+    assert info["applied"]
+    assert info["view_angle_degrees"] == pytest.approx(0.0, abs=1e-6)
+    assert info["factor"] == pytest.approx(1.25)
+    assert corrected.extents == pytest.approx([2.0, 1.25, 1.0])
+    original_rear = box_vertical_faces(box)[3].center
+    corrected_rear = box_vertical_faces(corrected)[3].center
+    assert corrected_rear == pytest.approx(original_rear)
+    floor = FloorPlane(
+        point=np.array([0.0, -0.5, 0.0]),
+        normal=FLOOR.normal,
+        inlier_ratio=FLOOR.inlier_ratio,
+        num_candidates=FLOOR.num_candidates,
+    )
+    assert floor.signed_distance(corrected.corners()[:4]) == pytest.approx(
+        np.zeros(4), abs=1e-8
+    )
+
+
+def test_depth_correction_skips_non_wall_backed_orientation():
+    orientation = PlacementOrientation(
+        mode="ambiguous",
+        primary_rear_face=None,
+        secondary_anchor_face=None,
+        primary_wall_index=None,
+        secondary_wall_index=None,
+        confidence=0.0,
+        reason="test",
+    )
+
+    corrected, info = apply_view_angle_depth_correction(old_box(), orientation)
+
+    assert not info["applied"]
+    assert corrected.extents == pytest.approx(old_box().extents)
+
+
+def test_target_depth_correction_preserves_rear_anchor():
+    box = Box3D(
+        center=np.array([0.0, 0.75, -2.0]),
+        axes=np.eye(3),
+        extents=np.array([1.5, 2.0, 1.5]),
+    )
+    target = TargetBoxPlacement(
+        box=box,
+        rear_anchor=np.array([0.0, -0.25, -2.0]),
+        rear_face_id="axis1_positive",
+        primary_wall_index=0,
+        secondary_wall_index=None,
+        wall_aligned=True,
+        tilt_degrees=0.0,
+        primary_wall_distance=0.0,
+        anchor_mode="wall_snapped",
+    )
+
+    corrected = apply_target_depth_correction(target, 1.25)
+
+    assert corrected.box.extents == pytest.approx([1.5, 2.5, 1.5])
+    assert corrected.rear_anchor == pytest.approx(target.rear_anchor)
+    assert corrected.box.center == pytest.approx([0.0, 1.0, -1.25])
+    assert corrected.anchor_mode == target.anchor_mode
 
 
 def test_wall_backed_orientation_and_target_box():

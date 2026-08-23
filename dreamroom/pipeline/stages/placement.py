@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
-from ...placement_geometry import build_target_box, infer_placement_orientation
+from ...placement_geometry import (
+    apply_target_depth_correction,
+    build_target_box,
+    calculate_view_angle_depth_correction,
+    infer_placement_orientation,
+)
 from ...placement_viz import (
     draw_placement_debug_2d,
     export_placement_debug_glb,
@@ -48,6 +53,19 @@ class PlacementStage(PipelineStage):
             f"confidence {orientation.confidence:.2f}"
         )
 
+        context.depth_correction = calculate_view_angle_depth_correction(
+            context.box,
+            orientation,
+        )
+        if context.depth_correction.get("applied"):
+            print(
+                "[target-box] depth correction: "
+                f"view {context.depth_correction['view_angle_degrees']:.1f}°, "
+                f"scale x{context.depth_correction['factor']:.3f}, "
+                f"{context.depth_correction['old_depth']:.2f}m -> "
+                f"{context.depth_correction['new_depth']:.2f}m"
+            )
+
         dimensions = (
             context.settings.target_width_m,
             context.settings.target_depth_m,
@@ -67,6 +85,15 @@ class PlacementStage(PipelineStage):
                 wall_snap_distance=context.settings.wall_snap_distance_m,
             )
             if context.target_placement is not None:
+                if context.depth_correction.get("applied"):
+                    context.depth_correction["target_depth_requested"] = dimensions[1]
+                    context.target_placement = apply_target_depth_correction(
+                        context.target_placement,
+                        context.depth_correction["factor"],
+                    )
+                    context.depth_correction["target_depth_applied"] = round(
+                        context.target_placement.box.extents[1], 4
+                    )
                 extents = context.target_placement.box.extents
                 print(
                     f"[target-box] target box (m): {extents[0]:.2f} x "

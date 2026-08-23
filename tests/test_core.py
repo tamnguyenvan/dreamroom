@@ -624,6 +624,88 @@ def test_placement_stage_writes_separate_debug_assets(tmp_path, monkeypatch, deb
         assert context.debug_placement_3d is None
 
 
+def test_placement_stage_applies_depth_factor_to_target_depth(tmp_path, monkeypatch):
+    image = np.zeros((10, 10, 3), dtype=np.uint8)
+    mask = np.zeros((10, 10), dtype=bool)
+    orientation = PlacementOrientation(
+        mode="wall_backed",
+        primary_rear_face="axis1_positive",
+        secondary_anchor_face=None,
+        primary_wall_index=0,
+        secondary_wall_index=None,
+        confidence=0.9,
+        reason="test",
+    )
+    context = PipelineContext(
+        image_path=tmp_path / "room.png",
+        settings=Settings(
+            debug=False,
+            target_width_m=1.0,
+            target_depth_m=2.0,
+            target_height_m=1.0,
+        ),
+        image_bgr=image,
+        selection=ObjectSelection(mask, [], []),
+        moge=MogeResult(
+            np.zeros((10, 10, 3)),
+            {
+                "image_size": [10, 10],
+                "intrinsics": [[1.0, 0.0, 0.5], [0.0, 1.0, 0.5], [0.0, 0.0, 1.0]],
+            },
+        ),
+        point_map=np.zeros((10, 10, 3)),
+        mask_pm=mask,
+        scale_correction=1.0,
+        floor=FloorPlane(np.zeros(3), np.array([0.0, 1.0, 0.0]), 1.0, 100),
+        box=Box3D(np.zeros(3), np.eye(3), np.ones(3)),
+    )
+    target_depths = []
+    target_box = TargetBoxPlacement(
+        box=Box3D(
+            center=np.array([0.0, 1.0, -2.0]),
+            axes=np.eye(3),
+            extents=np.array([1.0, 2.0, 1.0]),
+        ),
+        rear_anchor=np.array([0.0, 0.0, -2.0]),
+        rear_face_id="axis1_positive",
+        primary_wall_index=0,
+        secondary_wall_index=None,
+        wall_aligned=True,
+        tilt_degrees=0.0,
+        primary_wall_distance=0.0,
+        anchor_mode="wall_snapped",
+    )
+    monkeypatch.setattr(
+        "dreamroom.pipeline.stages.placement.infer_placement_orientation",
+        lambda *args: orientation,
+    )
+    monkeypatch.setattr(
+        "dreamroom.pipeline.stages.placement.calculate_view_angle_depth_correction",
+        lambda box, _orientation: {
+            "applied": True,
+            "factor": 1.25,
+            "view_angle_degrees": 0.0,
+            "old_depth": 1.0,
+            "new_depth": 1.25,
+        },
+    )
+    monkeypatch.setattr(
+        "dreamroom.pipeline.stages.placement.build_target_box",
+        lambda _box, _floor, _walls, _orientation, _width, depth, _height, **kwargs: (
+            target_depths.append(depth) or target_box
+        ),
+    )
+
+    PlacementStage().run(context)
+
+    assert target_depths == pytest.approx([2.0])
+    assert context.target_placement is not target_box
+    assert context.target_placement.box.extents == pytest.approx([1.0, 2.5, 1.0])
+    assert context.box.extents == pytest.approx([1.0, 1.0, 1.0])
+    assert context.depth_correction["target_depth_requested"] == 2.0
+    assert context.depth_correction["target_depth_applied"] == pytest.approx(2.5)
+
+
 def test_production_moge_outputs_only_save_2d_debug(tmp_path):
     context = PipelineContext(
         image_path=tmp_path / "room.jpg",

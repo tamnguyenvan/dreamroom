@@ -16,6 +16,9 @@ FACE_IDS = (
     "axis1_positive",
 )
 
+DEPTH_HEAD_ON_FACTOR = 1.4
+DEPTH_FULL_ACCURACY_ANGLE_DEGREES = 45.0
+
 
 @dataclass
 class BoxFace:
@@ -156,6 +159,191 @@ class TargetBoxPlacement:
                 self.secondary_clearance_preserved
             ),
         }
+
+
+def depth_correction_factor(
+    view_angle_degrees: float,
+    *,
+    head_on_factor: float = DEPTH_HEAD_ON_FACTOR,
+    full_accuracy_angle_degrees: float = DEPTH_FULL_ACCURACY_ANGLE_DEGREES,
+) -> float:
+    """Return the empirical target-depth scale for a wall-backed view.
+
+    ``view_angle_degrees`` is the angle between the wall-facing face normal
+    and the object-to-camera ray. A head-on view is 0 degrees and receives a
+    scale of 1.25. The scale smoothly reaches 1.0 at 45 degrees and remains
+    there for more oblique views.
+    """
+
+    if not np.isfinite(view_angle_degrees):
+        raise ValueError("view angle must be finite")
+    if not np.isfinite(head_on_factor) or head_on_factor < 1.0:
+        raise ValueError("head-on scale must be finite and at least 1")
+    if not np.isfinite(full_accuracy_angle_degrees) or full_accuracy_angle_degrees <= 0:
+        raise ValueError("full-accuracy angle must be positive and finite")
+    normalized = np.clip(view_angle_degrees, 0.0, full_accuracy_angle_degrees)
+    progress = normalized / full_accuracy_angle_degrees
+    return float(
+        1.0
+        + (head_on_factor - 1.0) * np.cos(0.5 * np.pi * progress)
+    )
+
+
+def calculate_view_angle_depth_correction(
+    box: Box3D,
+    orientation: PlacementOrientation,
+    *,
+    head_on_factor: float = DEPTH_HEAD_ON_FACTOR,
+    full_accuracy_angle_degrees: float = DEPTH_FULL_ACCURACY_ANGLE_DEGREES,
+) -> dict:
+    """Calculate the target-depth correction for a wall-backed object.
+
+    The fitted box is used only to estimate the view angle. The returned
+    correction is applied later to the constructed target box so the original
+    scene geometry, floor, and walls remain unchanged.
+    """
+
+    if orientation.primary_rear_face is None or orientation.primary_wall_index is None:
+        return {
+            "applied": False,
+            "reason": "no wall-backed rear face",
+            "factor": 1.0,
+        }
+
+    faces = {face.face_id: face for face in box_vertical_faces(box)}
+    rear_face = faces.get(orientation.primary_rear_face)
+    if rear_face is None:
+        return {
+            "applied": False,
+            "reason": "unknown rear face",
+            "factor": 1.0,
+        }
+
+    object_to_camera = -box.center
+    camera_distance = float(np.linalg.norm(object_to_camera))
+    if camera_distance < 1e-6:
+        return {
+            "applied": False,
+            "reason": "box center is at camera origin",
+            "factor": 1.0,
+        }
+    object_to_camera /= camera_distance
+    view_angle = float(
+        np.degrees(
+            np.arccos(
+                np.clip(abs(float(rear_face.normal @ object_to_camera)), 0.0, 1.0)
+            )
+        )
+    )
+    factor = depth_correction_factor(
+        view_angle,
+        head_on_factor=head_on_factor,
+        full_accuracy_angle_degrees=full_accuracy_angle_degrees,
+    )
+    depth_axis = rear_face.axis_index
+    old_depth = float(box.extents[depth_axis])
+    new_depth = old_depth * factor
+    rear_center = box.center + 0.5 * old_depth * rear_face.normal
+    return {
+        "applied": True,
+        "rear_face": rear_face.face_id,
+        "depth_axis": int(depth_axis),
+        "view_angle_degrees": round(view_angle, 3),
+        "head_on_factor": head_on_factor,
+        "full_accuracy_angle_degrees": full_accuracy_angle_degrees,
+        "factor": round(factor, 6),
+        "old_depth": round(old_depth, 4),
+        "new_depth": round(new_depth, 4),
+        "rear_face_center": np.round(rear_center, 4).tolist(),
+    }
+
+
+def apply_target_depth_correction(
+    target: TargetBoxPlacement,
+    factor: float,
+) -> TargetBoxPlacement:
+    """Apply a depth-only correction to an already-built target box.
+
+    The target's rear anchor and orientation are preserved. This keeps wall
+    snapping and secondary-wall placement intact while moving only the front
+    face of the target box.
+    """
+
+    if not np.isfinite(factor) or factor <= 0.0:
+        raise ValueError("target depth correction factor must be positive and finite")
+
+    old_box = target.box
+    new_extents = old_box.extents.copy()
+    new_depth = float(new_extents[1] * factor)
+    new_extents[1] = new_depth
+    new_center = (
+        target.rear_anchor
+        + 0.5 * new_depth * old_box.axes[1]
+        + 0.5 * new_extents[2] * old_box.axes[2]
+    )
+    new_box = Box3D(
+        center=new_center,
+        axes=old_box.axes.copy(),
+        extents=new_extents,
+    )
+    return TargetBoxPlacement(
+        box=new_box,
+        rear_anchor=target.rear_anchor.copy(),
+        rear_face_id=target.rear_face_id,
+        primary_wall_index=target.primary_wall_index,
+        secondary_wall_index=target.secondary_wall_index,
+        wall_aligned=target.wall_aligned,
+        tilt_degrees=target.tilt_degrees,
+        primary_wall_distance=target.primary_wall_distance,
+        primary_wall_distance_before_snap=target.primary_wall_distance_before_snap,
+        primary_wall_snapped=target.primary_wall_snapped,
+        wall_snap_threshold=target.wall_snap_threshold,
+        secondary_clearance_preserved=target.secondary_clearance_preserved,
+        anchor_mode=target.anchor_mode,
+    )
+
+
+def apply_view_angle_depth_correction(
+    box: Box3D,
+    orientation: PlacementOrientation,
+    *,
+    head_on_factor: float = DEPTH_HEAD_ON_FACTOR,
+    full_accuracy_angle_degrees: float = DEPTH_FULL_ACCURACY_ANGLE_DEGREES,
+) -> tuple[Box3D, dict]:
+    """Apply the calculated target-depth scale directly to a fitted box.
+
+    This compatibility helper is retained for geometry-level callers. The
+    pipeline uses :func:`calculate_view_angle_depth_correction` followed by
+    :func:`apply_target_depth_correction`, so fitted scene geometry is not
+    modified during normal placement.
+    """
+
+    correction = calculate_view_angle_depth_correction(
+        box,
+        orientation,
+        head_on_factor=head_on_factor,
+        full_accuracy_angle_degrees=full_accuracy_angle_degrees,
+    )
+    if not correction["applied"]:
+        return box, correction
+
+    rear_face = next(
+        face
+        for face in box_vertical_faces(box)
+        if face.face_id == correction["rear_face"]
+    )
+    old_depth = float(box.extents[correction["depth_axis"]])
+    new_depth = old_depth * correction["factor"]
+    rear_center = box.center + 0.5 * old_depth * rear_face.normal
+    corrected_center = rear_center - 0.5 * new_depth * rear_face.normal
+    corrected_extents = box.extents.copy()
+    corrected_extents[correction["depth_axis"]] = new_depth
+    corrected_box = Box3D(
+        center=corrected_center,
+        axes=box.axes.copy(),
+        extents=corrected_extents,
+    )
+    return corrected_box, correction
 
 
 def box_vertical_faces(box: Box3D) -> list[BoxFace]:
@@ -393,7 +581,15 @@ def infer_placement_orientation(
         and item.angle_degrees is not None
         and item.distance <= near_wall_distance
         and item.angle_degrees <= parallel_angle_degrees
-        and item.points_toward_wall >= 0.35
+        and (
+            item.points_toward_wall >= 0.35
+            or (
+                item.distance <= 0.05
+                and item.parallelism
+                >= np.cos(np.radians(parallel_angle_degrees))
+                and item.overlap_ratio >= 0.8
+            )
+        )
         and item.score >= minimum_wall_score
     ]
     corner_pairs: list[tuple[float, FaceEvidence, FaceEvidence]] = []
