@@ -20,7 +20,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_SIMPLECLICK_ENDPOINT = (
     "https://blakestieper--simpleclick-interactive-segmentation-simpl-771f03.modal.run"
 )
-DEFAULT_MOGE_ENDPOINT = "https://blakestieper--moge-2-api-web.modal.run"
+DEFAULT_MOGE_ENDPOINT = "https://blakestieper--moge-3-api-web.modal.run"
 DEFAULT_ONEFORMER_ENDPOINT = "https://blakestieper--oneformer-semantic-segmentation-oneformers-e54847.modal.run"
 
 
