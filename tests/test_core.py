@@ -27,11 +27,17 @@ from dreamroom.pipeline.runner import TaskGraphRunner
 from dreamroom.pipeline.stages.base import PipelineStage, StageStatus
 from dreamroom.pipeline.stages.geometry import GeometryStage
 from dreamroom.pipeline.stages.placement import PlacementStage
+from dreamroom.pipeline.stages.reference import ReferenceStage
 from dreamroom.pipeline.stages.walls import WallStage
 from dreamroom.pipeline.timing import LatencyTracker, print_latency_stats
 from dreamroom.sam3_client import SurfaceSegmentation
 from dreamroom.segmenter import sample_points
-from dreamroom.ui.reference import ReferenceLineApp, ReferenceScale, prompt_meters
+from dreamroom.ui.reference import (
+    ReferenceLineApp,
+    ReferenceScale,
+    prompt_meters,
+    prompt_object_dimensions,
+)
 from dreamroom.ui.strokes import ObjectSelection, SelectObjectApp, select_object
 from dreamroom.ui.window import WindowApp
 from dreamroom.wall_geometry import WallPlane
@@ -206,6 +212,30 @@ def test_reference_rejects_invalid_input(monkeypatch):
     assert prompt_meters() is None
 
 
+def test_object_dimensions_prompt_accepts_three_positive_values(monkeypatch):
+    monkeypatch.setattr(builtins, "input", lambda prompt="": "1.6 x 2.0 x 1.3")
+    assert prompt_object_dimensions() == pytest.approx((1.6, 2.0, 1.3))
+
+
+def test_reference_stage_collects_old_object_dimensions(monkeypatch):
+    image = make_image()
+    selection = ObjectSelection(np.ones(image.shape[:2], dtype=bool), [], [])
+    context = PipelineContext(
+        image_path="room.png",
+        settings=Settings(),
+        image_bgr=image,
+        selection=selection,
+    )
+    monkeypatch.setattr(
+        "dreamroom.pipeline.stages.reference.prompt_object_dimensions",
+        lambda: (1.6, 2.0, 1.3),
+    )
+
+    assert ReferenceStage().run(context) is StageStatus.COMPLETED
+    assert context.reference is None
+    assert context.old_object_dimensions_m == (1.6, 2.0, 1.3)
+
+
 def test_reference_clear():
     app = ReferenceLineApp(make_image())
     drag(app, cv2.EVENT_LBUTTONDOWN, [(100, 100), (400, 100)])
@@ -252,7 +282,7 @@ def test_pipeline_latency_stats(tmp_path, capsys):
         "surface_segmentation": None,
         "prepare_furniture": None,
         "object_selection": 1.2,
-        "reference_scale": 0.3,
+        "object_dimensions": 0.3,
         "prepare_point_map": None,
         "prepare_surface_masks": None,
         "fit_geometry": None,
@@ -532,14 +562,9 @@ def test_pipeline_run_writes_latency_stats(tmp_path, monkeypatch):
     mask = np.zeros((480, 640), dtype=bool)
     mask[100:200, 100:200] = True
     selection = ObjectSelection(mask=mask, positive_points=[], negative_points=[])
-    reference = ReferenceScale(start=[100, 100], end=[400, 100], pixel_length=300.0, meters=1.8)
     monkeypatch.setattr(
         "dreamroom.pipeline.stages.selection.select_object",
         lambda *args, **kwargs: selection,
-    )
-    monkeypatch.setattr(
-        "dreamroom.pipeline.stages.reference.get_reference_scale",
-        lambda *args, **kwargs: reference,
     )
 
     result = FurniturePipeline(Settings(outputs_root=tmp_path, moge_enabled=False)).run(image_path)
@@ -548,7 +573,7 @@ def test_pipeline_run_writes_latency_stats(tmp_path, monkeypatch):
     stats = json.loads((result.output_dir / "stats.json").read_text())
     assert stats["latency_seconds"]["resize"] >= 0
     assert stats["latency_seconds"]["object_selection"] >= 0
-    assert stats["latency_seconds"]["reference_scale"] >= 0
+    assert stats["latency_seconds"]["object_dimensions"] >= 0
     assert stats["latency_seconds"]["moge_inference"] is None
     assert stats["latency_seconds"]["surface_segmentation"] is None
     assert stats["latency_seconds"]["prepare_furniture"] is None
@@ -571,7 +596,7 @@ def test_placement_stage_writes_separate_debug_assets(tmp_path, monkeypatch, deb
     mask = np.zeros((10, 10), dtype=bool)
     orientation = PlacementOrientation(
         mode="ambiguous",
-        primary_rear_face=None,
+        primary_rear_face="axis0_positive",
         secondary_anchor_face=None,
         primary_wall_index=None,
         secondary_wall_index=None,
@@ -722,6 +747,64 @@ def test_target_box_and_separate_debug_outputs(tmp_path):
     assert target_data["rear_face_id"] == "axis0_negative"
     assert (tmp_path / "debug_placement_2d.png").is_file()
     assert (tmp_path / "debug_placement_3d.glb").read_bytes() == b"placement-glb"
+
+
+def test_placement_stage_applies_old_object_calibration(monkeypatch):
+    image = np.zeros((10, 10, 3), dtype=np.uint8)
+    orientation = PlacementOrientation(
+        mode="ambiguous",
+        primary_rear_face="axis0_positive",
+        secondary_anchor_face=None,
+        primary_wall_index=None,
+        secondary_wall_index=None,
+        confidence=0.0,
+        reason="test",
+    )
+    context = PipelineContext(
+        image_path="room.png",
+        settings=Settings(
+            target_width_m=0.99,
+            target_depth_m=2.0,
+            target_height_m=0.9,
+        ),
+        image_bgr=image,
+        selection=ObjectSelection(np.zeros((10, 10), dtype=bool), [], []),
+        moge=MogeResult(
+            np.zeros((10, 10, 3)),
+            {
+                "image_size": [10, 10],
+                "intrinsics": np.eye(3).tolist(),
+            },
+        ),
+        point_map=np.zeros((10, 10, 3)),
+        mask_pm=np.zeros((10, 10), dtype=bool),
+        scale_correction=1.0,
+        floor=FloorPlane(np.zeros(3), np.array([0.0, 1.0, 0.0]), 1.0, 100),
+        box=Box3D(
+            np.array([0.0, 0.5, -3.0]),
+            np.eye(3),
+            np.array([2.0, 1.0, 1.0]),
+        ),
+        old_object_dimensions_m=(1.0, 2.0, 1.0),
+    )
+    monkeypatch.setattr(
+        "dreamroom.pipeline.stages.placement.infer_placement_orientation",
+        lambda *args: orientation,
+    )
+
+    assert PlacementStage().run(context) is StageStatus.COMPLETED
+    assert context.target_placement is not None
+    assert context.target_placement.box.extents == pytest.approx(
+        [0.99, 2.0, 0.9]
+    )
+    assert context.calibration["object_ratio_calibration"]["moge_dimensions"] == [
+        1.0,
+        2.0,
+        1.0,
+    ]
+    assert context.calibration["object_ratio_calibration"][
+        "requested_target_dimensions_m"
+    ] == [0.99, 2.0, 0.9]
 
 
 def test_mask_to_uint8():

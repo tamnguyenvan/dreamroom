@@ -6,8 +6,8 @@ Furniture replacement pipeline with dependency-based concurrent execution.
 - **Object selection** — draw polylines in an OpenCV window, segment
   with the deployed [SimpleClick](https://github.com/uncbiag/SimpleClick) service,
   confirm the mask.
-- **Reference scale** — draw a reference line on an object of known length and enter
-  its length in meters to get a px-per-meter scale.
+- **Old-object dimensions** — enter the selected object's width, depth, and height
+  in meters for depth/width-ratio calibration.
 - **MoGe inference** — send the working image to the MoGe-2 API and receive a point
   map and metadata, plus optional debug assets.
 - **Surface segmentation** — use a deployed OneFormer semantic model first, then
@@ -24,12 +24,12 @@ Furniture replacement pipeline with dependency-based concurrent execution.
   render the replacement with Seedream 5.0 Pro.
 
 After resize, MoGe inference, OneFormer/SAM3 segmentation, and furniture preprocessing
-start concurrently while object selection and reference input remain on the
-main thread. Downstream tasks start as soon as their dependencies finish:
+start concurrently while object selection and dimension input remain on the main
+thread. Downstream tasks start as soon as their dependencies finish:
 
 ```mermaid
 graph LR
-    resize --> object_selection --> reference_scale --> prepare_point_map
+    resize --> object_selection --> object_dimensions --> prepare_point_map
     object_selection --> remove_selected_object --> render_furniture
     resize --> moge_inference --> prepare_point_map
     resize --> surface_segmentation --> prepare_surface_masks
@@ -42,7 +42,7 @@ graph LR
 
 MoGe and room-surface API calls are launched before user confirmation to
 minimize critical-path latency. Gemini removal starts immediately after the
-selection is confirmed and overlaps reference-scale and geometry preparation.
+selection is confirmed and overlaps dimension input and geometry preparation.
 Aborting the UI requests best-effort cancellation, but an already running
 provider request may still complete and incur usage.
 
@@ -75,7 +75,7 @@ dreamroom/
 │   └── ui/
 │       ├── window.py       # shared OpenCV window base class
 │       ├── strokes.py      # polylines -> segment -> confirm
-│       └── reference.py    # reference line -> length in meters
+│       └── reference.py    # old-object dimensions input and legacy reference UI
 ├── scripts/
 │   ├── run_pipeline.py           # CLI entry point
 │   └── smoke_test_segmenter.py   # remote segmentation smoke test
@@ -133,14 +133,11 @@ can also be overridden with `DREAMROOM_SEEDREAM_ENDPOINT` and
 | `n` / `r` | redraw the strokes in a new annotation view |
 | Esc / `q` | abort |
 
-### Reference controls
+### Old-object dimensions
 
 | Input | Action |
 | --- | --- |
-| console input | enter the known reference length in meters before the window opens |
-| left-drag | draw the reference line (yellow) |
-| Enter | confirm the drawn line |
-| `u` / `c` | redraw the line |
+| console input | enter width, depth, and height, in meters; e.g. `1.6 2.0 1.3` |
 | Esc / `q` | abort |
 
 ### MoGe-2
@@ -202,9 +199,15 @@ returned metadata.
   in `box3d.json` and `walls3d.json` (`sam3`, `manual`, or `camera_up`).
 - Object points are transformed into the floor frame. A minimum-area 2D
   footprint and robust height percentile produce the oriented box.
-- In `--debug` mode, `debug_3d.glb` scales the original MoGe scene with the
-  reference calibration factor before adding the fitted box and floor plane,
-  keeping all displayed geometry in calibrated metric coordinates.
+- No reference line is required. MoGe geometry remains in native units, and the
+  entered old-object dimensions calibrate only the depth/width relationship.
+- The old-object ratio is `actual_depth / actual_width`; the MoGe ratio is
+  `moge_depth / moge_width`. Their quotient is the depth correction factor.
+- Target width remains fixed. When converting the real target dimensions into
+  native MoGe units, target depth uses the inverse of that factor; the physical
+  dimensions sent to Seedream remain unchanged and are recorded in `box3d.json`.
+- In `--debug` mode, `debug_3d.glb` keeps the original MoGe scene in native units
+  and adds the fitted box and floor plane in the same coordinate system.
 
 ### Segmented wall planes
 
@@ -278,14 +281,14 @@ Each run writes `outputs/<image-name>-<timestamp>/`:
 - `mask.png` — confirmed object mask (`255` = object).
 - `overlay.png` — mask preview over the image.
 - `selection.json` — click points used and mask area.
-- `reference.json` — reference line endpoints, pixel length, meters, px/m.
+- `reference.json` — optional legacy reference-line artifact; new runs do not create it.
 - `meta.json` — sizes, resize scale (`original_coord = resized_coord * resize_scale`), settings.
 - `point_map.npy` — MoGe point map at the API response resolution (debug mode).
 - `output.glb` — original MoGe textured scene in native MoGe coordinates (debug mode).
 - `moge_metadata.json` — point-map size, camera convention, and normalized intrinsics (debug mode).
 - `depth.png` / `normal.png` — MoGe debug previews (debug mode).
-- `box3d.json` — calibrated box center, axes, extents, corners, floor plane,
-  scale correction, and the floor fitting method used.
+- `box3d.json` — native-unit box center, axes, extents, corners, floor plane,
+  old-object ratio calibration, target dimensions, and the floor fitting method used.
 - `walls3d.json` — detected wall planes, finite corners, support, residual,
   confidence, and the floor/wall fitting methods used (`oneformer`, `sam3`, or
   `manual`).

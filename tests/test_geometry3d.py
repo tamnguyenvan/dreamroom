@@ -17,6 +17,7 @@ import pytest
 
 from dreamroom.geometry3d import (
     Box3D,
+    calculate_aspect_ratio_calibration,
     FloorPlane,
     calibrate_scale,
     extract_object_points,
@@ -26,6 +27,7 @@ from dreamroom.geometry3d import (
     floor_candidate_points,
     resize_mask,
     segmented_surface_points,
+    target_dimensions_in_moge_units,
 )
 from dreamroom.moge_client import DEFAULT_ENDPOINT, MogeClient
 from dreamroom.viz3d import export_debug_glb, intrinsics_px, project_points
@@ -344,3 +346,29 @@ def test_calibrate_scale_invalid_points():
     point_map = np.full((10, 10, 3), np.nan, dtype=np.float32)
     factor, info = calibrate_scale(point_map, [1.0, 1.0], [5.0, 5.0], meters=1.0)
     assert factor == 1.0 and not info["applied"]
+
+
+def test_ratio_calibration_matches_moge_bias_example():
+    factor, info = calculate_aspect_ratio_calibration(
+        [1.7, 2.7, 1.5], [1.6, 2.0, 1.3]
+    )
+
+    expected_factor = (2.0 / 1.6) / (2.7 / 1.7)
+    assert factor == pytest.approx(expected_factor)
+    assert info["factor_definition"] == (
+        "actual_depth_width_ratio / moge_depth_width_ratio"
+    )
+    moge_target, adjusted_target = target_dimensions_in_moge_units(
+        [0.99, 2.0, 0.9],
+        [1.7, 2.7, 1.5],
+        [1.6, 2.0, 1.3],
+        factor,
+    )
+    assert adjusted_target == pytest.approx([0.99, 2.0, 0.9])
+    assert moge_target == pytest.approx(
+        [
+            1.7 * 0.99 / 1.6,
+            1.7 * 2.0 / 1.6 / factor,
+            1.5 * 0.9 / 1.3,
+        ]
+    )

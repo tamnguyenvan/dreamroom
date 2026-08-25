@@ -151,7 +151,7 @@ def main() -> None:
     result = FurniturePipeline(settings).run(args.image, args.output_dir)
     if result is None:
         raise SystemExit("pipeline aborted")
-    print(f"scale: 1 px = {result.reference.meters_per_px * 100:.2f} cm")
+    print("target geometry: native MoGe units with old-object ratio calibration")
 
 
 if __name__ == "__main__":

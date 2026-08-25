@@ -17,7 +17,7 @@ MIN_WALL_CANDIDATES = 100
 
 @dataclass
 class WallPlane:
-    """A finite vertical wall patch in calibrated MoGe coordinates."""
+    """A finite vertical wall patch in native MoGe coordinates."""
 
     point: np.ndarray  # (3,) point on the wall-floor intersection
     normal: np.ndarray  # (3,) horizontal unit normal, facing the camera
@@ -500,7 +500,7 @@ def filter_wall_planes(
     *,
     min_confidence: float = 0.5,
     min_relative_height: float = 0.7,
-    parallel_angle_degrees: float = 5.0,
+    parallel_angle_degrees: float = 10.0,
     parallel_offset: float = 0.5,
     weak_parallel_support_ratio: float = 0.5,
 ) -> list[WallPlane]:

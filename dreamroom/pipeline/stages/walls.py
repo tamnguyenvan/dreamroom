@@ -37,7 +37,13 @@ class WallStage(PipelineStage):
             else "sam3"
         )
         if context.surface_segmentation is not None:
-            print(f"[walls] fitting planes from {surface_provider}-selected pixels...")
+            candidate_counts = [
+                int(mask.sum()) for mask in context.wall_surface_masks_pm
+            ]
+            print(
+                f"[walls] fitting planes from {surface_provider}-selected pixels "
+                f"({candidate_counts} points per mask)..."
+            )
             try:
                 context.walls = fit_segmented_wall_planes(
                     context.point_map,
@@ -65,7 +71,7 @@ class WallStage(PipelineStage):
         print(f"[walls] detected {len(context.walls)} wall plane(s)")
         for index, wall in enumerate(context.walls, start=1):
             print(
-                f"  wall {index}: {wall.width:.2f}m x {wall.height:.2f}m, "
+                f"  wall {index}: {wall.width:.2f} x {wall.height:.2f} MoGe units, "
                 f"{wall.inlier_count} inliers, confidence {wall.confidence:.2f}"
             )
 

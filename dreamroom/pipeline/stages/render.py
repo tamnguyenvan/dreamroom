@@ -81,14 +81,19 @@ class RenderStage(PipelineStage):
                 context.image_bgr.shape[0] / pm_h,
             ),
         )
-        extents = context.target_placement.box.extents
+        dimension_calibration = context.calibration.get("object_ratio_calibration", {})
+        target_dimensions_m = dimension_calibration.get(
+            "calibrated_target_dimensions_m",
+            context.target_placement.box.extents.tolist(),
+        )
         prompt = (
             "Replace the selected old furniture in Image 1 with the furniture "
             "shown in Image 2. Image 1 is the room photo with the old furniture "
             "removed and a red wireframe target box marking the exact placement "
             "region. Match "
-            f"the target box dimensions of {extents[0]:.2f} m width, "
-            f"{extents[1]:.2f} m depth, and {extents[2]:.2f} m height. "
+            f"the target box dimensions of {target_dimensions_m[0]:.2f} m width, "
+            f"{target_dimensions_m[1]:.2f} m depth, and "
+            f"{target_dimensions_m[2]:.2f} m height. "
             "Place the new furniture on the floor inside that box, matching "
             "its perspective, orientation, scale, lighting, shadows, and room "
             "geometry. Preserve the walls, floor, windows, camera viewpoint, "

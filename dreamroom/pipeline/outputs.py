@@ -15,7 +15,7 @@ class OutputWriter:
     """Write the stable output contract for a pipeline run."""
 
     def save(self, context: PipelineContext, output_dir: str | Path | None = None) -> Path:
-        if context.image_bgr is None or context.selection is None or context.reference is None:
+        if context.image_bgr is None or context.selection is None:
             raise RuntimeError("cannot save an incomplete pipeline context")
         out_dir = self._resolve_output_dir(context, output_dir)
         out_dir.mkdir(parents=True, exist_ok=True)
@@ -37,9 +37,10 @@ class OutputWriter:
                 indent=2,
             )
         )
-        (out_dir / "reference.json").write_text(
-            json.dumps(context.reference.to_dict(), indent=2)
-        )
+        if context.reference is not None:
+            (out_dir / "reference.json").write_text(
+                json.dumps(context.reference.to_dict(), indent=2)
+            )
         assert context.original_size is not None
         (out_dir / "meta.json").write_text(
             json.dumps(
@@ -83,7 +84,10 @@ class OutputWriter:
                     "floor_fit_method": context.floor_fit_method,
                     "scale_correction": context.scale_correction,
                     "calibration": context.calibration,
-                    "coordinate_frame": "MoGe glb camera (+X right, +Y up, -Z forward), meters",
+                    "coordinate_frame": (
+                        "MoGe glb camera (+X right, +Y up, -Z forward), native units; "
+                        "target dimensions are width-normalized"
+                    ),
                 },
                 indent=2,
             )
@@ -96,7 +100,10 @@ class OutputWriter:
                     "floor_fit_method": context.floor_fit_method,
                     "wall_fit_method": context.wall_fit_method,
                     "scale_correction": context.scale_correction,
-                    "coordinate_frame": "MoGe glb camera (+X right, +Y up, -Z forward), meters",
+                    "coordinate_frame": (
+                        "MoGe glb camera (+X right, +Y up, -Z forward), native units; "
+                        "target dimensions are width-normalized"
+                    ),
                 },
                 indent=2,
             )

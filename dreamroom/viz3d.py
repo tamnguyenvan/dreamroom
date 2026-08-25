@@ -160,7 +160,7 @@ def draw_debug_2d(
             cv2.circle(frame, tuple(np.round(point).astype(int)), 3, BOX_COLOR, -1)
 
     lines = [
-        f"box (m): {box.extents[0]:.2f} x {box.extents[1]:.2f} x {box.extents[2]:.2f}",
+        f"box (MoGe units): {box.extents[0]:.2f} x {box.extents[1]:.2f} x {box.extents[2]:.2f}",
         f"floor inliers: {plane.inlier_ratio * 100:.0f}%{'  [FALLBACK plane]' if plane.fallback else ''}",
     ]
     if walls is not None:

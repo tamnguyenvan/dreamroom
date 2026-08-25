@@ -1,4 +1,4 @@
-"""Draw a reference line and enter its real-world length in meters.
+"""Enter old-object dimensions, with legacy reference-line helpers.
 
 Controls:
     console     enter the known line length before opening the window
@@ -65,6 +65,32 @@ def prompt_meters() -> float | None:
         print("  length must be positive - restart the reference step to try again")
         return None
     return value
+
+
+def prompt_object_dimensions() -> tuple[float, float, float] | None:
+    """Ask for the old object's width, depth, and height in meters."""
+
+    print("\n\n==================================")
+    print("enter the old object's dimensions in meters (width depth height):")
+    print("example: 1.6 2.0 1.3")
+    print("==================================")
+    try:
+        raw = input("  > ").strip().lower()
+    except EOFError:
+        return None
+    values = raw.replace("×", " ").replace("x", " ").replace(",", " ").split()
+    if len(values) != 3:
+        print("  enter exactly three values: width depth height")
+        return None
+    try:
+        dimensions = tuple(float(value) for value in values)
+    except ValueError:
+        print("  dimensions must be numbers - restart the step to try again")
+        return None
+    if not all(math.isfinite(value) and value > 0 for value in dimensions):
+        print("  dimensions must be positive - restart the step to try again")
+        return None
+    return dimensions
 
 
 class ReferenceLineApp(WindowApp):

@@ -146,7 +146,7 @@ def draw_placement_debug_2d(
     if target is not None:
         extents = target.box.extents
         lines.append(
-            f"target (m): {extents[0]:.2f} x {extents[1]:.2f} x {extents[2]:.2f}"
+            f"target (MoGe units): {extents[0]:.2f} x {extents[1]:.2f} x {extents[2]:.2f}"
         )
     return draw_banner(frame, lines)
 

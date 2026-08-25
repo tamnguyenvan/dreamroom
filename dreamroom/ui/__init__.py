@@ -2,7 +2,12 @@
 
 from .window import overlay_mask
 from .strokes import ObjectSelection, SelectObjectApp, select_object
-from .reference import ReferenceScale, ReferenceLineApp, get_reference_scale
+from .reference import (
+    ReferenceScale,
+    ReferenceLineApp,
+    get_reference_scale,
+    prompt_object_dimensions,
+)
 
 __all__ = [
     "ObjectSelection",
@@ -11,4 +16,5 @@ __all__ = [
     "ReferenceScale",
     "ReferenceLineApp",
     "get_reference_scale",
+    "prompt_object_dimensions",
 ]

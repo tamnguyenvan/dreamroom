@@ -60,6 +60,11 @@ class GeometryStage(PipelineStage):
                     context.floor_fit_method = surface_provider
             except Exception as exc:
                 print(f"[geometry] {surface_provider} floor fit failed: {exc}")
+            if floor_points is not None:
+                print(
+                    f"[geometry] {surface_provider} floor/rug point candidates: "
+                    f"{len(floor_points)}"
+                )
 
         if context.floor is None:
             manual_points = floor_candidate_points(context.point_map, context.mask_pm)
@@ -78,10 +83,10 @@ class GeometryStage(PipelineStage):
         source = context.floor_fit_method or "unknown"
         print(
             f"[geometry] floor source: {source}, "
-            f"SAM3 candidates: {len(floor_points) if floor_points is not None else 0}, "
-            f"box extents (m): {context.box.extents[0]:.2f} x "
+            f"semantic candidates: {len(floor_points) if floor_points is not None else 0}, "
+            f"box extents (MoGe units): {context.box.extents[0]:.2f} x "
             f"{context.box.extents[1]:.2f} x {context.box.extents[2]:.2f}, "
-            f"scale correction x{context.calibration.get('factor', 1.0):.3f}"
+            "native coordinate scale x1.000"
         )
 
         return StageStatus.COMPLETED

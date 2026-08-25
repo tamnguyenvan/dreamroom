@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from ...geometry3d import calibrate_scale, resize_mask
+from ...geometry3d import resize_mask
 from ...moge_client import MogeClient
 from ..models import PipelineContext
 from .base import PipelineStage, StageStatus
@@ -38,10 +38,10 @@ class MogeStage(PipelineStage):
 
 
 class PointMapStage(PipelineStage):
-    """Apply object/reference inputs to the independently inferred point map."""
+    """Prepare the native point map for object-dimension calibration."""
 
     name = "prepare_point_map"
-    dependencies = ("moge_inference", "reference_scale")
+    dependencies = ("moge_inference", "object_dimensions")
     background = True
 
     def run(self, context: PipelineContext) -> StageStatus:
@@ -51,21 +51,19 @@ class PointMapStage(PipelineStage):
         if (
             context.image_bgr is None
             or context.selection is None
-            or context.reference is None
+            or context.old_object_dimensions_m is None
             or context.moge is None
         ):
-            raise RuntimeError("MoGe, selection, and reference results are required")
+            raise RuntimeError("MoGe, selection, and old-object dimensions are required")
 
         pm_w, pm_h = context.moge.image_size
-        sx = pm_w / context.image_bgr.shape[1]
-        sy = pm_h / context.image_bgr.shape[0]
         context.mask_pm = resize_mask(context.selection.mask, pm_w, pm_h)
-        context.scale_correction, context.calibration = calibrate_scale(
-            context.moge.point_map,
-            [context.reference.start[0] * sx, context.reference.start[1] * sy],
-            [context.reference.end[0] * sx, context.reference.end[1] * sy],
-            context.reference.meters,
-        )
-        context.point_map = context.moge.point_map * context.scale_correction
-        print(f"[point-map] calibrated scale x{context.scale_correction:.3f}")
+        context.scale_correction = 1.0
+        context.calibration = {
+            "applied": False,
+            "reason": "reference line removed; geometry remains in native MoGe units",
+            "coordinate_scale": "native_moge_units",
+        }
+        context.point_map = context.moge.point_map.copy()
+        print("[point-map] using native MoGe coordinates (no reference line)")
         return StageStatus.COMPLETED

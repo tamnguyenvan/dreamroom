@@ -28,6 +28,7 @@ class PipelineContext:
     resize_scale: float = 1.0
     selection: ObjectSelection | None = None
     reference: ReferenceScale | None = None
+    old_object_dimensions_m: tuple[float, float, float] | None = None
     moge: MogeResult | None = None
     point_map: np.ndarray | None = None
     mask_pm: np.ndarray | None = None
@@ -67,9 +68,10 @@ class PipelineResult:
     output_dir: Path
     image_bgr: np.ndarray
     selection: ObjectSelection
-    reference: ReferenceScale
+    reference: ReferenceScale | None
     resize_scale: float
     original_size: tuple[int, int]
+    old_object_dimensions_m: tuple[float, float, float] | None = None
     surface_segmentation: SurfaceSegmentation | None = None
     box: Box3D | None = None
     floor: FloorPlane | None = None
@@ -81,19 +83,20 @@ class PipelineResult:
     rendered_image: bytes | None = None
     render_metadata: dict | None = None
     scale_correction: float | None = None
+    calibration: dict = field(default_factory=dict)
     latency_seconds: dict[str, float | None] = field(default_factory=dict)
 
     @classmethod
     def from_context(cls, output_dir: Path, context: PipelineContext) -> "PipelineResult":
         assert context.image_bgr is not None
         assert context.selection is not None
-        assert context.reference is not None
         assert context.original_size is not None
         return cls(
             output_dir=output_dir,
             image_bgr=context.image_bgr,
             selection=context.selection,
             reference=context.reference,
+            old_object_dimensions_m=context.old_object_dimensions_m,
             resize_scale=context.resize_scale,
             original_size=context.original_size,
             surface_segmentation=context.surface_segmentation,
@@ -107,5 +110,6 @@ class PipelineResult:
             rendered_image=context.rendered_image,
             render_metadata=context.render_metadata,
             scale_correction=context.scale_correction,
+            calibration=context.calibration,
             latency_seconds=context.latency_seconds,
         )

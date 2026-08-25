@@ -136,6 +136,87 @@ def calibrate_scale(
     return factor, info
 
 
+def _validate_dimensions(
+    dimensions: list[float] | tuple[float, ...] | np.ndarray, name: str
+) -> np.ndarray:
+    values = np.asarray(dimensions, dtype=float)
+    if values.shape != (3,):
+        raise ValueError(f"{name} must contain width, depth, and height")
+    if not np.isfinite(values).all() or np.any(values <= 0):
+        raise ValueError(f"{name} must contain three positive finite values")
+    return values
+
+
+def _validate_positive(value: float, name: str) -> float:
+    result = float(value)
+    if not np.isfinite(result) or result <= 0:
+        raise ValueError(f"{name} must be positive and finite")
+    return result
+
+
+def calculate_aspect_ratio_calibration(
+    moge_dimensions: list[float] | tuple[float, ...] | np.ndarray,
+    actual_dimensions: list[float] | tuple[float, ...] | np.ndarray,
+) -> tuple[float, dict]:
+    """Compare old-object depth/width ratios without absolute scale."""
+
+    moge = _validate_dimensions(moge_dimensions, "MoGe dimensions")
+    actual = _validate_dimensions(actual_dimensions, "actual dimensions")
+    actual_ratio = float(actual[1] / actual[0])
+    moge_ratio = float(moge[1] / moge[0])
+    factor = float(actual_ratio / moge_ratio)
+    info = {
+        "applied": True,
+        "axis": "depth_from_width_ratio",
+        "actual_dimensions_m": actual.tolist(),
+        "moge_dimensions": moge.tolist(),
+        "actual_ratio": actual_ratio,
+        "moge_ratio": moge_ratio,
+        "depth_ratio_factor": factor,
+        "target_native_depth_factor": float(1.0 / factor),
+        "factor_definition": "actual_depth_width_ratio / moge_depth_width_ratio",
+        "target_definition": (
+            "native_target_depth = width_normalized_target_depth / depth_ratio_factor; "
+            "physical dimensions unchanged"
+        ),
+    }
+    return factor, info
+
+
+def target_dimensions_in_moge_units(
+    target_dimensions: list[float] | tuple[float, ...] | np.ndarray,
+    old_moge_dimensions: list[float] | tuple[float, ...] | np.ndarray,
+    old_actual_dimensions: list[float] | tuple[float, ...] | np.ndarray,
+    depth_ratio_factor: float,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Map target meters to native MoGe units using old-object proportions.
+
+    Width and height use the old object's fitted-to-real relative scales. The
+    Target width remains fixed. The real-to-native depth conversion uses the
+    inverse of the MoGe-to-real ratio discrepancy; the physical target
+    dimensions themselves remain unchanged.
+
+    Returns ``(moge_dimensions, target_dimensions)``.
+    """
+
+    target = _validate_dimensions(target_dimensions, "target dimensions")
+    old_moge = _validate_dimensions(old_moge_dimensions, "old MoGe dimensions")
+    old_actual = _validate_dimensions(old_actual_dimensions, "old actual dimensions")
+    factor = _validate_positive(depth_ratio_factor, "depth ratio factor")
+
+    width_scale = old_moge[0] / old_actual[0]
+    height_scale = old_moge[2] / old_actual[2]
+    native_depth_factor = 1.0 / factor
+    target_moge = np.array(
+        [
+            target[0] * width_scale,
+            target[1] * width_scale * native_depth_factor,
+            target[2] * height_scale,
+        ]
+    )
+    return target_moge, target.copy()
+
+
 
 def extract_object_points(
     point_map: np.ndarray,
